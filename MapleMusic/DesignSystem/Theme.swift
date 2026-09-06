@@ -1,5 +1,6 @@
 import Combine
 import SwiftUI
+import UIKit
 
 enum AccentColorChoice: String, CaseIterable, Identifiable {
     case yandexYellow
@@ -148,26 +149,31 @@ extension View {
 struct ArtworkView: View {
     let artwork: Artwork
     var cornerRadius: CGFloat = 12
+    @State private var image: UIImage?
+    @State private var hasFinishedLoading = false
 
     var body: some View {
         ZStack {
             Color(uiColor: .secondarySystemBackground)
-            if let url = artwork.url {
-                AsyncImage(url: url) { phase in
-                    if case let .success(image) = phase {
-                        image.resizable().scaledToFill()
-                    } else if case .empty = phase {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        placeholder
-                    }
-                }
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else if artwork.url != nil, !hasFinishedLoading {
+                ProgressView().controlSize(.small)
             } else {
                 placeholder
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .accessibilityHidden(true)
+        .task(id: artwork.url) {
+            image = nil
+            hasFinishedLoading = artwork.url == nil
+            guard let url = artwork.url else { return }
+            image = await ArtworkImageCache.shared.image(for: url)
+            hasFinishedLoading = true
+        }
     }
 
     private var placeholder: some View {

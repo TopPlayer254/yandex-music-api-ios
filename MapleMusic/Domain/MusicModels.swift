@@ -144,6 +144,35 @@ struct Lyrics: Codable, Hashable, Sendable {
     let trackID: String
     let writers: String?
     let lines: [LyricsLine]
+    let isSynchronized: Bool
+    let source: String?
+
+    init(
+        trackID: String,
+        writers: String?,
+        lines: [LyricsLine],
+        isSynchronized: Bool = true,
+        source: String? = nil
+    ) {
+        self.trackID = trackID
+        self.writers = writers
+        self.lines = lines
+        self.isSynchronized = isSynchronized
+        self.source = source
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case trackID, writers, lines, isSynchronized, source
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        trackID = try values.decode(String.self, forKey: .trackID)
+        writers = try values.decodeIfPresent(String.self, forKey: .writers)
+        lines = try values.decode([LyricsLine].self, forKey: .lines)
+        isSynchronized = try values.decodeIfPresent(Bool.self, forKey: .isSynchronized) ?? true
+        source = try values.decodeIfPresent(String.self, forKey: .source)
+    }
 }
 
 struct UserProfile: Codable, Hashable, Sendable {

@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import MediaPlayer
 import Combine
+import Network
 
 @MainActor
 final class PlayerStore: ObservableObject {
@@ -30,17 +31,43 @@ final class PlayerStore: ObservableObject {
 
     private let service: AnyMusicService
     private let offlineStore: OfflineStore
+    private let downloads: DownloadsStore
+    private let lyricsSettings: LyricsSettings
+    private let downloadPreferences: DownloadPreferences
     private let player = AVPlayer()
+    private let networkMonitor = NWPathMonitor()
+    private let networkQueue = DispatchQueue(label: "com.hikeri.yamusic.network-monitor")
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var itemStatus: NSKeyValueObservation?
     private var requestID = UUID()
     private var playbackFile: URL?
     private var remoteTargets: [(MPRemoteCommand, Any)] = []
+    private var artworkTask: Task<Void, Never>?
+    private var nowPlayingArtwork: MPMediaItemArtwork?
+    private var networkIsAvailable = true
+    private var recoveryTask: Task<Void, Never>?
+    private var pendingRecovery: PlaybackRecovery?
 
-    init(service: AnyMusicService, offlineStore: OfflineStore) {
+    private struct PlaybackRecovery {
+        let track: Track
+        let queue: [Track]
+        let resumeTime: TimeInterval
+        let attempt: Int
+    }
+
+    init(
+        service: AnyMusicService,
+        offlineStore: OfflineStore,
+        downloads: DownloadsStore,
+        lyricsSettings: LyricsSettings,
+        downloadPreferences: DownloadPreferences
+    ) {
         self.service = service
         self.offlineStore = offlineStore
+        self.downloads = downloads
+        self.lyricsSettings = lyricsSettings
+        self.downloadPreferences = downloadPreferences
         let savedQuality = AudioQuality(rawValue: UserDefaults.standard.string(forKey: "preferred-quality") ?? "")
         preferredQuality = savedQuality == .lossless ? .lossless : .high
         if let savedVolume = UserDefaults.standard.object(forKey: "player-volume") as? Double {
@@ -51,6 +78,7 @@ final class PlayerStore: ObservableObject {
         player.volume = Float(volume)
         configureObservers()
         configureRemoteCommands()
+        configureNetworkMonitor()
     }
 
     deinit {
@@ -60,6 +88,9 @@ final class PlayerStore: ObservableObject {
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
         }
+        networkMonitor.cancel()
+        artworkTask?.cancel()
+        recoveryTask?.cancel()
     }
 
     var progress: Double {
@@ -68,11 +99,20 @@ final class PlayerStore: ObservableObject {
     }
 
     var activeLyricsLineIndex: Int? {
-        guard let lines = lyrics?.lines, !lines.isEmpty else { return nil }
+        guard lyrics?.isSynchronized == true, let lines = lyrics?.lines, !lines.isEmpty else { return nil }
         return LyricsSynchronizer.activeLineIndex(at: currentTime, lines: lines)
     }
 
     func play(_ track: Track, queue proposedQueue: [Track]? = nil) async {
+        await play(track, queue: proposedQueue, recoveryAttempt: 0)
+    }
+
+    private func play(_ track: Track, queue proposedQueue: [Track]?, recoveryAttempt: Int) async {
+        if recoveryAttempt == 0 {
+            recoveryTask?.cancel()
+            recoveryTask = nil
+            pendingRecovery = nil
+        }
         let identifier = UUID()
         requestID = identifier
         isBuffering = true
@@ -124,15 +164,16 @@ final class PlayerStore: ObservableObject {
             duration = track.duration
             currentTime = 0
             lyrics = nil
+            loadNowPlayingArtwork(for: track)
 
             let item = AVPlayerItem(asset: mediaAsset)
             itemStatus = item.observe(\.status, options: [.new]) { [weak self] observed, _ in
                 let status = observed.status
-                let message = observed.error?.localizedDescription
+                let error = observed.error
                 Task { @MainActor in
                     guard let self, self.requestID == identifier else { return }
                     self.isBuffering = status == .unknown
-                    if status == .failed { self.failCurrentPlayback(message) }
+                    if status == .failed { self.failCurrentPlayback(error) }
                 }
             }
             player.replaceCurrentItem(with: item)
@@ -143,13 +184,46 @@ final class PlayerStore: ObservableObject {
             Task {
                 let cached = await offlineStore.localLyrics(for: track.id)
                 let fetched: Lyrics?
-                if let cached { fetched = cached } else { fetched = try? await service.lyrics(for: track) }
+                if let cached {
+                    fetched = cached
+                } else if let serviceLyrics = try? await service.lyrics(for: track),
+                          !serviceLyrics.lines.isEmpty {
+                    fetched = serviceLyrics
+                } else {
+                    fetched = try? await lyricsSettings.fallbackLyrics(for: track)
+                }
                 guard requestID == identifier else { return }
                 lyrics = fetched
             }
+            if downloadPreferences.automaticallyDownloadsPlayedTracks,
+               track.downloadAllowed,
+               !downloads.isDownloaded(track),
+               !downloads.activeTrackIDs.contains(track.id) {
+                Task { await downloads.download(track, quality: resolvedPreferredQuality(for: track)) }
+            }
+        } catch is CancellationError {
+            guard requestID == identifier else { return }
+            if let preparedFile { try? FileManager.default.removeItem(at: preparedFile) }
+            isBuffering = false
         } catch {
             guard requestID == identifier else { return }
             if let preparedFile { try? FileManager.default.removeItem(at: preparedFile) }
+            if !networkIsAvailable || Self.isConnectivityError(error) {
+                if recoveryAttempt < 2 {
+                    prepareRecovery(
+                        for: track,
+                        queue: proposedQueue,
+                        resumeTime: 0,
+                        attempt: recoveryAttempt + 1
+                    )
+                } else {
+                    pendingRecovery = nil
+                    isBuffering = false
+                    errorMessage = "Сеть вернулась, но трек пока не загрузился. Нажмите воспроизведение, чтобы повторить."
+                    updateNowPlayingInfo()
+                }
+                return
+            }
             isBuffering = false
             errorMessage = error.localizedDescription
             updateNowPlayingInfo()
@@ -158,6 +232,12 @@ final class PlayerStore: ObservableObject {
 
     func stop() {
         requestID = UUID()
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        pendingRecovery = nil
+        artworkTask?.cancel()
+        artworkTask = nil
+        nowPlayingArtwork = nil
         player.pause()
         player.replaceCurrentItem(with: nil)
         itemStatus = nil
@@ -260,7 +340,151 @@ final class PlayerStore: ObservableObject {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
     }
 
-    private func failCurrentPlayback(_ detail: String?) {
+    private func configureNetworkMonitor() {
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            let isAvailable = path.status == .satisfied
+            Task { @MainActor in
+                self?.networkPathDidChange(isAvailable: isAvailable)
+            }
+        }
+        networkMonitor.start(queue: networkQueue)
+    }
+
+    private func networkPathDidChange(isAvailable: Bool) {
+        let wasAvailable = networkIsAvailable
+        networkIsAvailable = isAvailable
+
+        if !isAvailable {
+            recoveryTask?.cancel()
+            recoveryTask = nil
+            if let track = currentTrack,
+               playbackFile == nil,
+               resolvedAsset?.url.isFileURL == false {
+                pendingRecovery = PlaybackRecovery(track: track, queue: queue, resumeTime: currentTime, attempt: 1)
+                player.pause()
+                isPlaying = false
+                isBuffering = true
+                updateNowPlayingInfo()
+            }
+        } else if !wasAvailable || pendingRecovery != nil {
+            scheduleRecovery()
+        }
+    }
+
+    private func prepareRecovery(
+        for track: Track,
+        queue proposedQueue: [Track]?,
+        resumeTime: TimeInterval,
+        attempt: Int
+    ) {
+        let recoveryQueue: [Track]
+        if let proposedQueue, !proposedQueue.isEmpty {
+            recoveryQueue = proposedQueue
+        } else if queue.contains(where: { $0.id == track.id }) {
+            recoveryQueue = queue
+        } else {
+            recoveryQueue = [track]
+        }
+        pendingRecovery = PlaybackRecovery(
+            track: track,
+            queue: recoveryQueue,
+            resumeTime: resumeTime,
+            attempt: attempt
+        )
+        errorMessage = nil
+        isPlaying = false
+        isBuffering = true
+        if player.currentItem == nil {
+            currentTrack = track
+            queue = recoveryQueue
+            duration = track.duration
+            currentTime = resumeTime
+            lyrics = nil
+            loadNowPlayingArtwork(for: track)
+            updateNowPlayingInfo()
+        }
+        if networkIsAvailable {
+            scheduleRecovery()
+        }
+    }
+
+    private func scheduleRecovery() {
+        guard networkIsAvailable, pendingRecovery != nil, recoveryTask == nil else { return }
+        recoveryTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled,
+                  let self,
+                  self.networkIsAvailable,
+                  let recovery = self.pendingRecovery
+            else { return }
+            self.pendingRecovery = nil
+            self.recoveryTask = nil
+            await self.play(
+                recovery.track,
+                queue: recovery.queue,
+                recoveryAttempt: recovery.attempt
+            )
+            if self.currentTrack?.id == recovery.track.id,
+               self.player.currentItem != nil,
+               recovery.resumeTime > 0 {
+                self.seek(to: recovery.resumeTime)
+            }
+        }
+    }
+
+    private func loadNowPlayingArtwork(for track: Track) {
+        artworkTask?.cancel()
+        artworkTask = nil
+        nowPlayingArtwork = nil
+        guard let url = track.artwork.url else { return }
+        let trackID = track.id
+        artworkTask = Task { [weak self] in
+            guard let image = await ArtworkImageCache.shared.image(for: url),
+                  !Task.isCancelled,
+                  let self,
+                  self.currentTrack?.id == trackID
+            else { return }
+            self.nowPlayingArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            self.updateNowPlayingInfo()
+        }
+    }
+
+    private static func isConnectivityError(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            return [
+                .notConnectedToInternet, .networkConnectionLost, .timedOut,
+                .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+                .internationalRoamingOff, .dataNotAllowed,
+            ].contains(urlError.code)
+        }
+        if let serviceError = error as? MusicServiceError,
+           serviceError == .http(0) {
+            return true
+        }
+        let nsError = error as NSError
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error,
+           (underlying as NSError) !== nsError {
+            return isConnectivityError(underlying)
+        }
+        return false
+    }
+
+    private func failCurrentPlayback(_ error: Error?) {
+        if let track = currentTrack,
+           !networkIsAvailable || error.map(Self.isConnectivityError) == true {
+            let resumeTime = currentTime
+            player.pause()
+            player.replaceCurrentItem(with: nil)
+            itemStatus = nil
+            isPlaying = false
+            isBuffering = true
+            resolvedAsset = nil
+            if let playbackFile { try? FileManager.default.removeItem(at: playbackFile) }
+            playbackFile = nil
+            prepareRecovery(for: track, queue: queue, resumeTime: resumeTime, attempt: 1)
+            updateNowPlayingInfo()
+            return
+        }
         player.pause()
         player.replaceCurrentItem(with: nil)
         itemStatus = nil
@@ -269,12 +493,15 @@ final class PlayerStore: ObservableObject {
         resolvedAsset = nil
         currentTrack = nil
         lyrics = nil
+        artworkTask?.cancel()
+        artworkTask = nil
+        nowPlayingArtwork = nil
         duration = 0
         currentTime = 0
         isShowingNowPlaying = false
         if let playbackFile { try? FileManager.default.removeItem(at: playbackFile) }
         playbackFile = nil
-        if let detail, !detail.isEmpty {
+        if let detail = error?.localizedDescription, !detail.isEmpty {
             errorMessage = "Не удалось воспроизвести трек. \(detail)"
         } else {
             errorMessage = "Не удалось воспроизвести трек. Попробуйте другой режим API в настройках."
@@ -346,14 +573,20 @@ final class PlayerStore: ObservableObject {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
         }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+        var info: [String: Any] = [
             MPMediaItemPropertyTitle: track.title,
             MPMediaItemPropertyArtist: track.artist.name,
             MPMediaItemPropertyAlbumTitle: track.albumTitle,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+            MPNowPlayingInfoPropertyExternalContentIdentifier: track.id,
         ]
+        if let nowPlayingArtwork {
+            info[MPMediaItemPropertyArtwork] = nowPlayingArtwork
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 }
 

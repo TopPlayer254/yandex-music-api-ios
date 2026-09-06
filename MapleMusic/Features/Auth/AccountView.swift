@@ -7,6 +7,7 @@ struct AccountView: View {
     @EnvironmentObject private var downloads: DownloadsStore
     @EnvironmentObject private var player: PlayerStore
     @EnvironmentObject private var settings: ProviderSettings
+    @EnvironmentObject private var lyricsSettings: LyricsSettings
 
     var body: some View {
         NavigationStack {
@@ -54,6 +55,17 @@ struct AccountView: View {
                             subtitle: settings.configuration.kind.title,
                             systemImage: "waveform",
                             color: .pink
+                        )
+                    }
+
+                    NavigationLink {
+                        LyricsSettingsView()
+                    } label: {
+                        SettingsDestinationLabel(
+                            title: "Тексты песен",
+                            subtitle: lyricsSettings.hasGeniusToken ? "Яндекс + Genius" : "Яндекс",
+                            systemImage: "quote.bubble.fill",
+                            color: .orange
                         )
                     }
 
@@ -284,6 +296,62 @@ private struct AccountSettingsView: View {
     }
 }
 
+private struct LyricsSettingsView: View {
+    @EnvironmentObject private var settings: LyricsSettings
+    @State private var token = ""
+    @State private var isSaving = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Использовать Genius как резерв", isOn: $settings.usesGeniusFallback)
+                    .disabled(!settings.hasGeniusToken)
+            } footer: {
+                Text("Сначала приложение запрашивает синхронизированный текст у музыкального сервиса. Genius используется только если основной текст недоступен.")
+            }
+
+            Section("Genius API") {
+                SecureField("Client Access Token", text: $token)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+
+                Button(settings.hasGeniusToken ? "Заменить API-ключ" : "Сохранить API-ключ") {
+                    let value = token
+                    token = ""
+                    isSaving = true
+                    Task {
+                        _ = await settings.saveToken(value)
+                        isSaving = false
+                    }
+                }
+                .disabled(isSaving || token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                if settings.hasGeniusToken {
+                    Button("Удалить API-ключ", role: .destructive) {
+                        Task { await settings.clearToken() }
+                    }
+                }
+
+                Link("Открыть страницу API-клиентов Genius", destination: URL(string: "https://genius.com/api-clients")!)
+            }
+
+            Section {
+                Text("Ключ хранится только на устройстве. Когда резерв включён, название трека и исполнитель отправляются Genius для поиска страницы песни; служебные подписи в квадратных скобках удаляются. Текст Genius не синхронизирован по времени.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let error = settings.errorMessage {
+                Section("Ошибка") {
+                    Text(error).foregroundStyle(.red)
+                }
+            }
+        }
+        .navigationTitle("Тексты песен")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 private struct AudioProviderSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var player: PlayerStore
@@ -362,6 +430,7 @@ private struct AudioProviderSettingsView: View {
 
 private struct StorageSettingsView: View {
     @EnvironmentObject private var downloads: DownloadsStore
+    @EnvironmentObject private var downloadPreferences: DownloadPreferences
     @EnvironmentObject private var player: PlayerStore
     @State private var showsClearDownloadsConfirmation = false
 
@@ -379,6 +448,15 @@ private struct StorageSettingsView: View {
                 Label("Доступно в «Файлы» → «На iPhone» → Maple Music", systemImage: "folder.fill")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle(
+                    "Автоскачивание при воспроизведении",
+                    isOn: $downloadPreferences.automaticallyDownloadsPlayedTracks
+                )
+            } footer: {
+                Text("После успешного запуска трек автоматически сохраняется в выбранном качестве. Уже загруженные треки пропускаются.")
             }
 
             Section {

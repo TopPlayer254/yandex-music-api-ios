@@ -20,10 +20,8 @@ struct RootView: View {
                 LegacyTabs(selection: $selection)
             }
         }
-        .sheet(isPresented: $player.isShowingNowPlaying) {
+        .fullScreenCover(isPresented: $player.isShowingNowPlaying) {
             NowPlayingView()
-                .presentationBackground(.clear)
-                .presentationCornerRadius(34)
         }
         .alert("Музыкальный сервис", isPresented: Binding(
             get: { catalog.errorMessage != nil || downloads.errorMessage != nil },
@@ -137,7 +135,7 @@ private struct ModernMiniPlayer: View {
                 Button { player.isShowingNowPlaying = true } label: {
                     HStack(spacing: 8) {
                         ArtworkView(artwork: track.artwork, cornerRadius: 6)
-                            .frame(width: 28, height: 28)
+                            .frame(width: 32, height: 32)
                         Text(track.title)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.primary)
@@ -147,8 +145,10 @@ private struct ModernMiniPlayer: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                playbackButton(size: 32)
+                playbackButton(size: 36)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
         } else {
             HStack(spacing: 8) {
                 Button { player.isShowingNowPlaying = true } label: {
@@ -173,7 +173,7 @@ private struct ModernMiniPlayer: View {
                 .accessibilityLabel("Следующий трек")
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 4)
+            .padding(.vertical, 6)
         }
     }
 

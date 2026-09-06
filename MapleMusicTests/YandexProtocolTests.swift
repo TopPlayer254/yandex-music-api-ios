@@ -61,6 +61,24 @@ final class YandexProtocolTests: XCTestCase {
         XCTAssertEqual(lines.map(\.text), ["Припев", "Припев", "Позже"])
     }
 
+    func testGeniusLyricsParserRemovesSectionLabelsAndDecodesHTML() {
+        let html = #"""
+        <div data-lyrics-container="true">[Куплет 1]<br>Первая &amp; вторая<br/><span>Строка &#x2764;</span></div>
+        <div class="Lyrics__Container" data-lyrics-container='true'>[Припев]<br>Финал</div>
+        """#
+        XCTAssertEqual(
+            GeniusLyricsParser.extractLines(from: html),
+            ["Первая & вторая", "Строка ❤", "Финал"]
+        )
+    }
+
+    func testLegacyLyricsMetadataDecodesAsSynchronized() throws {
+        let data = Data(#"{"trackID":"track","writers":null,"lines":[]}"#.utf8)
+        let lyrics = try JSONDecoder().decode(Lyrics.self, from: data)
+        XCTAssertTrue(lyrics.isSynchronized)
+        XCTAssertNil(lyrics.source)
+    }
+
     func testEncrawAESCTRZeroCounterVector() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

@@ -190,7 +190,7 @@ struct PlaylistView: View {
                             Text(description).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         }
                     }
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         Button { if let first = playlist.tracks.first { Task { await player.play(first, queue: playlist.tracks) } } } label: {
                             Label("Воспроизвести", systemImage: "play.fill")
                                 .frame(maxWidth: .infinity)
@@ -198,16 +198,36 @@ struct PlaylistView: View {
                         }
                         .tint(appearance.tint)
                         .adaptiveProminentButtonStyle()
+
+                        Button {
+                            Task { await downloads.downloadAll(playlist.tracks, quality: player.preferredQuality) }
+                        } label: {
+                            if let progress = downloads.bulkProgress {
+                                Label("\(progress.completed)/\(progress.total)", systemImage: "arrow.down.circle")
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                Label("Скачать всё", systemImage: "arrow.down.circle")
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .adaptiveSecondaryButtonStyle()
+                        .disabled(
+                            playlist.tracks.isEmpty
+                                || downloads.bulkProgress != nil
+                                || playlist.tracks.filter(\.downloadAllowed).allSatisfy(downloads.isDownloaded)
+                        )
+
                         Button {
                             if let random = playlist.tracks.randomElement() {
                                 player.isShuffling = true
                                 Task { await player.play(random, queue: playlist.tracks) }
                             }
                         } label: {
-                            Label("Перемешать", systemImage: "shuffle")
-                                .frame(maxWidth: .infinity)
+                            Image(systemName: "shuffle")
+                                .frame(width: 44, height: 44)
                         }
                         .adaptiveSecondaryButtonStyle()
+                        .accessibilityLabel("Перемешать")
                     }
                 }
                 .listRowBackground(Color.clear)

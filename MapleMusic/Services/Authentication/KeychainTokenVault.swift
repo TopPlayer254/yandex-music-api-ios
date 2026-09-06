@@ -191,3 +191,40 @@ actor BackendSessionVault {
         try ProtectedFileCodableStore.clear(service: service, account: account)
     }
 }
+
+actor GeniusTokenVault {
+    private struct Secret: Codable {
+        let value: String
+    }
+
+    private let service = "com.hikeri.yamusic.genius-token"
+    private let account = "client-access-token"
+
+    func load() throws -> String? {
+        do {
+            if let secret = try ProtectedFileCodableStore.load(service: service, account: account, as: Secret.self) {
+                return secret.value
+            }
+        } catch {
+            try? ProtectedFileCodableStore.clear(service: service, account: account)
+        }
+        do {
+            if let secret = try KeychainCodableStore.load(service: service, account: account, as: Secret.self) {
+                try? ProtectedFileCodableStore.save(secret, service: service, account: account)
+                return secret.value
+            }
+        } catch { }
+        return nil
+    }
+
+    func save(_ value: String) throws {
+        let secret = Secret(value: value)
+        try ProtectedFileCodableStore.save(secret, service: service, account: account)
+        try? KeychainCodableStore.save(secret, service: service, account: account)
+    }
+
+    func clear() throws {
+        try? KeychainCodableStore.clear(service: service, account: account)
+        try ProtectedFileCodableStore.clear(service: service, account: account)
+    }
+}

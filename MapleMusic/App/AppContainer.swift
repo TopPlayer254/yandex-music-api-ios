@@ -9,6 +9,8 @@ final class AppContainer: ObservableObject {
     let catalog: CatalogStore
     let player: PlayerStore
     let downloads: DownloadsStore
+    let lyricsSettings: LyricsSettings
+    let downloadPreferences: DownloadPreferences
     private let configuration: ProviderConfiguration
 
     init(configuration: ProviderConfiguration) {
@@ -43,11 +45,24 @@ final class AppContainer: ObservableObject {
         auth = AuthStore(configuration: configuration, vault: vault, profileLoader: profile)
         offlineStore = OfflineStore()
         catalog = CatalogStore(service: service)
-        player = PlayerStore(service: service, offlineStore: offlineStore)
-        downloads = DownloadsStore(offlineStore: offlineStore, service: service)
+        lyricsSettings = LyricsSettings()
+        downloadPreferences = DownloadPreferences()
+        downloads = DownloadsStore(
+            offlineStore: offlineStore,
+            service: service,
+            lyricsSettings: lyricsSettings
+        )
+        player = PlayerStore(
+            service: service,
+            offlineStore: offlineStore,
+            downloads: downloads,
+            lyricsSettings: lyricsSettings,
+            downloadPreferences: downloadPreferences
+        )
     }
 
     func bootstrap() async {
+        await lyricsSettings.restore()
         await auth.restore()
         await loadCurrentAccount()
     }

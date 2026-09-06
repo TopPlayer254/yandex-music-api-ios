@@ -118,11 +118,9 @@ struct NowPlayingView: View {
     private var playerPage: some View {
         GeometryReader { proxy in
             let compact = proxy.size.height < 620
-            let artworkSide = min(proxy.size.width - 56, proxy.size.height * (compact ? 0.36 : 0.44))
+            let artworkSide = min(proxy.size.width - 64, compact ? 250 : 330)
 
             VStack(spacing: compact ? 10 : 18) {
-                Spacer(minLength: compact ? 8 : 18)
-
                 if let track = player.currentTrack {
                     ArtworkView(artwork: track.artwork, cornerRadius: compact ? 12 : 16)
                         .frame(width: artworkSide, height: artworkSide)
@@ -131,15 +129,15 @@ struct NowPlayingView: View {
                         .animation(.spring(response: 0.5, dampingFraction: 0.82), value: player.isPlaying)
                 }
 
-                Spacer(minLength: compact ? 6 : 12)
                 metadata
                 scrubber
                 transportControls(compact: compact)
                 volumeControl
-                Spacer(minLength: 2)
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 28)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.horizontal, 32)
+            .padding(.top, compact ? 8 : 18)
         }
     }
 
@@ -195,29 +193,29 @@ struct NowPlayingView: View {
     }
 
     private func transportControls(compact: Bool) -> some View {
-        HStack {
+        HStack(spacing: 8) {
             Button { player.previous() } label: {
                 Image(systemName: "backward.fill")
                     .font(.system(size: compact ? 28 : 32))
                     .frame(width: 58, height: 58)
             }
-            Spacer()
+            .frame(maxWidth: .infinity)
             Button { player.togglePlayback() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: compact ? 42 : 48, weight: .medium))
                     .frame(width: 76, height: 68)
                     .contentTransition(.symbolEffect(.replace))
             }
-            Spacer()
+            .frame(maxWidth: .infinity)
             Button { player.next() } label: {
                 Image(systemName: "forward.fill")
                     .font(.system(size: compact ? 28 : 32))
                     .frame(width: 58, height: 58)
             }
+            .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
-        .padding(.horizontal, 14)
     }
 
     private var volumeControl: some View {
@@ -238,7 +236,7 @@ struct NowPlayingView: View {
     }
 
     private var pageControls: some View {
-        HStack {
+        HStack(spacing: 8) {
             Button { page = page == .lyrics ? .player : .lyrics } label: {
                 Image(systemName: "quote.bubble")
                     .frame(width: 44, height: 44)
@@ -246,14 +244,12 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Текст песни")
-
-            Spacer()
+            .frame(maxWidth: .infinity)
             AirPlayButton()
                 .frame(width: 20, height: 20)
                 .frame(width: 44, height: 44)
                 .accessibilityLabel("AirPlay")
-
-            Spacer()
+                .frame(maxWidth: .infinity)
             Button { page = page == .queue ? .player : .queue } label: {
                 Image(systemName: "list.bullet")
                     .frame(width: 44, height: 44)
@@ -261,6 +257,7 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Очередь")
+            .frame(maxWidth: .infinity)
         }
         .font(.title3)
     }
@@ -320,24 +317,19 @@ private struct MinimalTrackSlider: View {
 private struct ArtworkBackdrop: View {
     let artwork: Artwork?
     @State private var drifts = false
+    @State private var image: UIImage?
 
     var body: some View {
         ZStack {
             Color.black
-            if let url = artwork?.url {
-                AsyncImage(url: url) { phase in
-                    if case let .success(image) = phase {
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .scaleEffect(drifts ? 1.22 : 1.08)
-                            .offset(x: drifts ? 22 : -18, y: drifts ? -16 : 18)
-                            .saturation(1.12)
-                            .blur(radius: 62, opaque: true)
-                    } else {
-                        Color(uiColor: .systemGray5)
-                    }
-                }
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .scaleEffect(drifts ? 1.22 : 1.08)
+                    .offset(x: drifts ? 22 : -18, y: drifts ? -16 : 18)
+                    .saturation(1.12)
+                    .blur(radius: 62, opaque: true)
             } else {
                 Color(uiColor: .systemGray5)
             }
@@ -349,6 +341,11 @@ private struct ArtworkBackdrop: View {
             withAnimation(.easeInOut(duration: 14).repeatForever(autoreverses: true)) {
                 drifts = true
             }
+        }
+        .task(id: artwork?.url) {
+            image = nil
+            guard let url = artwork?.url else { return }
+            image = await ArtworkImageCache.shared.image(for: url)
         }
     }
 }
@@ -363,15 +360,23 @@ private struct LyricsView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 20) {
                             ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
-                                Button { player.seek(to: line.time) } label: {
+                                if lyrics.isSynchronized {
+                                    Button { player.seek(to: line.time) } label: {
+                                        Text(line.text)
+                                            .font(.title2.bold())
+                                            .multilineTextAlignment(.leading)
+                                            .foregroundStyle(index == player.activeLyricsLineIndex ? .white : .white.opacity(0.38))
+                                            .scaleEffect(index == player.activeLyricsLineIndex ? 1 : 0.98, anchor: .leading)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .id(index)
+                                } else {
                                     Text(line.text)
                                         .font(.title2.bold())
                                         .multilineTextAlignment(.leading)
-                                        .foregroundStyle(index == player.activeLyricsLineIndex ? .white : .white.opacity(0.38))
-                                        .scaleEffect(index == player.activeLyricsLineIndex ? 1 : 0.98, anchor: .leading)
+                                        .foregroundStyle(.white.opacity(0.9))
+                                        .id(index)
                                 }
-                                .buttonStyle(.plain)
-                                .id(index)
                             }
                             if let writers = lyrics.writers, !writers.isEmpty {
                                 Text("Авторы: \(writers)")
@@ -379,10 +384,17 @@ private struct LyricsView: View {
                                     .foregroundStyle(.white.opacity(0.45))
                                     .padding(.top, 16)
                             }
+                            if let source = lyrics.source, !source.isEmpty {
+                                Text("Текст: \(source)")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.45))
+                                    .padding(.top, 8)
+                            }
                         }
                         .padding(24)
                     }
                     .onChange(of: player.activeLyricsLineIndex) { _, index in
+                        guard lyrics.isSynchronized else { return }
                         guard let index else { return }
                         withAnimation(.easeOut(duration: 0.35)) {
                             proxy.scrollTo(index, anchor: .center)

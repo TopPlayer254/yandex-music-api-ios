@@ -28,6 +28,8 @@ private struct ProviderRoot: View {
                 .environmentObject(container.catalog)
                 .environmentObject(container.player)
                 .environmentObject(container.downloads)
+                .environmentObject(container.lyricsSettings)
+                .environmentObject(container.downloadPreferences)
                 .task { await container.bootstrap() }
                 .tint(appearance.tint)
                 .onDisappear { container.player.stop() }
