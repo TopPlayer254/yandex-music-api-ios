@@ -13,15 +13,15 @@
 
 ## Executed in GitHub Actions
 
-- [Workflow run #5](https://github.com/TopPlayer254/yandex-music-api-ios/actions/runs/34031465286)
+- [Workflow run #6](https://github.com/TopPlayer254/yandex-music-api-ios/actions/runs/34033369831)
   used Xcode 26.3 and generated the project with XcodeGen 2.46.0.
 - `xcodebuild test` compiled and passed the XCTest suite on iPhone 16 Pro / iOS 26.2.
 - `xcodebuild archive` produced an unsigned arm64 device archive.
 - The archive was packaged as `dist/MapleMusic-unsigned.ipa`; local SHA-256:
-  `a46bd79a279f4aad04669e586c28e789c7f12b17ee9337c39e91a130bc9b9179`.
+  `9cf5c3bfe9576b90480f39eece2ece14b5268af4d660effe7de88579e9f2af90`.
 - The IPA structure contains `Payload/MapleMusic.app/Info.plist` and no
   `embedded.mobileprovision` or `_CodeSignature` entry.
-- The packaged app reports bundle ID `com.hikeri.yamusic`, version `0.4.0`, build `5`,
+- The packaged app reports bundle ID `com.hikeri.yamusic`, version `0.5.0`, build `6`,
   `UIFileSharingEnabled = true`, and `LSSupportsOpeningDocumentsInPlace = true`.
 
 ## Not executed
@@ -34,7 +34,8 @@ playback and download/relaunch UI checks still require manual testing with the u
 XCTest target includes mixed-type API IDs and Cyrillic metadata, LRC offset/multiple tags,
 an AES-CTR known-answer vector, account isolation and offline metadata persistence,
 bulk deletion that preserves untracked Files documents, download permission checks, PKCE and
-demo-service checks. These tests executed successfully.
+demo-service checks, the standard-quality signing vector, and distinct Standard/Lossless choices.
+These tests executed successfully.
 
 ## Protocol references
 
