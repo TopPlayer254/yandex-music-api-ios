@@ -13,15 +13,15 @@
 
 ## Executed in GitHub Actions
 
-- [Workflow run #6](https://github.com/TopPlayer254/yandex-music-api-ios/actions/runs/34033369831)
+- [Workflow run #7](https://github.com/TopPlayer254/yandex-music-api-ios/actions/runs/34036876012)
   used Xcode 26.3 and generated the project with XcodeGen 2.46.0.
 - `xcodebuild test` compiled and passed the XCTest suite on iPhone 16 Pro / iOS 26.2.
 - `xcodebuild archive` produced an unsigned arm64 device archive.
 - The archive was packaged as `dist/MapleMusic-unsigned.ipa`; local SHA-256:
-  `9cf5c3bfe9576b90480f39eece2ece14b5268af4d660effe7de88579e9f2af90`.
+  `fda204ccade6f5c4897a94d0016da28ed425733de85432863b76aacf3297100a`.
 - The IPA structure contains `Payload/MapleMusic.app/Info.plist` and no
   `embedded.mobileprovision` or `_CodeSignature` entry.
-- The packaged app reports bundle ID `com.hikeri.yamusic`, version `0.5.0`, build `6`,
+- The packaged app reports bundle ID `com.hikeri.yamusic`, version `0.6.0`, build `7`,
   `UIFileSharingEnabled = true`, and `LSSupportsOpeningDocumentsInPlace = true`.
 
 ## Not executed
@@ -51,4 +51,5 @@ The adapter is a Swift implementation of the HTTP data formats, not an embedded 
 
 Public protocol signing constants and device-client parameters can change upstream.
 They are not credentials for a user's account. Personal access tokens are obtained at runtime
-and stored only in the device Keychain. Lossless/download requests still require server authorization.
+and stored in the app container with iOS Data Protection, with a best-effort Keychain copy.
+Lossless/download requests still require server authorization.
