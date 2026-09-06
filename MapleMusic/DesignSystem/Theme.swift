@@ -2,6 +2,7 @@ import Combine
 import SwiftUI
 
 enum AccentColorChoice: String, CaseIterable, Identifiable {
+    case yandexYellow
     case musicRed
     case orange
     case blue
@@ -13,6 +14,7 @@ enum AccentColorChoice: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .yandexYellow: "Классический жёлтый"
         case .musicRed: "Музыка"
         case .orange: "Оранжевый"
         case .blue: "Синий"
@@ -24,6 +26,7 @@ enum AccentColorChoice: String, CaseIterable, Identifiable {
 
     var color: Color {
         switch self {
+        case .yandexYellow: Color(red: 1.00, green: 0.80, blue: 0.00)
         case .musicRed: Color(red: 0.94, green: 0.18, blue: 0.29)
         case .orange: .orange
         case .blue: .blue
@@ -164,10 +167,6 @@ struct ArtworkView: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
-        }
         .accessibilityHidden(true)
     }
 
@@ -189,31 +188,29 @@ struct TrackRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Button(action: play) {
-                ArtworkView(artwork: track.artwork, cornerRadius: 7)
-                    .frame(width: 52, height: 52)
-                    .overlay {
-                        Image(systemName: "play.fill")
-                            .font(.caption.bold())
-                            .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.6), radius: 4)
+                HStack(spacing: 12) {
+                    ArtworkView(artwork: track.artwork, cornerRadius: 7)
+                        .frame(width: 52, height: 52)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 5) {
+                            Text(track.title).lineLimit(1)
+                            if track.isExplicit {
+                                Image(systemName: "e.square.fill").font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        .font(.body)
+                        Text("\(track.artist.name) · \(track.albumTitle)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 5) {
-                    Text(track.title).lineLimit(1)
-                    if track.isExplicit {
-                        Image(systemName: "e.square.fill").font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
-                .font(.body)
-                Text("\(track.artist.name) · \(track.albumTitle)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 8)
             if isDownloading {
                 ProgressView().controlSize(.small)
             } else {

@@ -87,14 +87,12 @@ final class PlayerStore: ObservableObject {
             }
             guard requestID == identifier else { return }
             var playbackURL = asset.url
-            if asset.decryptionKey != nil {
-                let file = FileManager.default.temporaryDirectory.appendingPathComponent("maple-\(identifier).\(MediaFileLoader.fileExtension(for: asset))")
-                try await MediaFileLoader.download(asset, to: file)
-                guard requestID == identifier else { try? FileManager.default.removeItem(at: file); return }
-                preparedFile = file
-                playbackURL = file
-            } else if asset.url.isFileURL,
-                      asset.url.pathExtension.lowercased() != MediaFileLoader.fileExtension(for: asset) {
+            let isHLS = asset.transport == "hls" || asset.url.pathExtension.lowercased() == "m3u8"
+            let expectedExtension = MediaFileLoader.fileExtension(for: asset)
+            let needsPreparedFile = asset.decryptionKey != nil
+                || (!asset.url.isFileURL && !isHLS)
+                || (asset.url.isFileURL && asset.url.pathExtension.lowercased() != expectedExtension)
+            if needsPreparedFile {
                 let file = FileManager.default.temporaryDirectory.appendingPathComponent("maple-\(identifier).\(MediaFileLoader.fileExtension(for: asset))")
                 try await MediaFileLoader.download(asset, to: file)
                 guard requestID == identifier else { try? FileManager.default.removeItem(at: file); return }
@@ -259,7 +257,6 @@ final class PlayerStore: ObservableObject {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
-            try session.setActive(true)
         } catch {
             errorMessage = "Не удалось подготовить аудиосессию: \(error.localizedDescription)"
         }

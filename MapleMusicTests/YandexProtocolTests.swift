@@ -8,7 +8,7 @@ final class YandexProtocolTests: XCTestCase {
         XCTAssertEqual(YandexMusicService.sign(message), "bkw/VEyHuTLJ8+avInQ6SKNxxFRoGDpXob2ah2xts68=")
     }
 
-    func testRawAACUsesAACExtensionAndPassesHeaderValidation() throws {
+    func testYandexAACUsesM4AExtensionAndPassesContainerValidation() throws {
         let asset = PlaybackAsset(
             url: URL(fileURLWithPath: "/tmp/source"),
             quality: .high,
@@ -18,11 +18,11 @@ final class YandexProtocolTests: XCTestCase {
             expiresAt: nil,
             allowsOfflineDownload: true
         )
-        XCTAssertEqual(MediaFileLoader.fileExtension(for: asset), "aac")
+        XCTAssertEqual(MediaFileLoader.fileExtension(for: asset), "m4a")
 
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: file) }
-        try Data([0xFF, 0xF1, 0x50, 0x80, 0x00, 0x1F]).write(to: file)
+        try Data([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]).write(to: file)
         XCTAssertNoThrow(try MediaFileLoader.validatePlayableFile(at: file, asset: asset))
     }
 

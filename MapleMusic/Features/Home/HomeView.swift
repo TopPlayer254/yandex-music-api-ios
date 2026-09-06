@@ -25,7 +25,7 @@ struct HomeView: View {
                     ContentUnavailableView {
                         Label("Ваша музыка начинается здесь", systemImage: "music.note.house")
                     } description: {
-                        Text("Подключите аккаунт или выберите локальную демоверсию в настройках.")
+                        Text("Войдите в аккаунт в настройках, чтобы открыть свою музыку.")
                     } actions: {
                         Button("Открыть настройки") { showsAccount = true }
                             .buttonStyle(.borderedProminent)

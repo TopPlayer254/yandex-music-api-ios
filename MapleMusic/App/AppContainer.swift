@@ -26,8 +26,15 @@ final class AppContainer: ObservableObject {
             let api = YandexMusicService(baseURL: url, streamAPI: configuration.streamAPI, token: token)
             service = AnyMusicService(api)
             let streamAPI = configuration.streamAPI
+            let oauth = YandexOAuthClient()
             profile = { value in
-                try await YandexMusicService(baseURL: url, streamAPI: streamAPI, token: { value }).profile()
+                do {
+                    return try await YandexMusicService(baseURL: url, streamAPI: streamAPI, token: { value }).profile()
+                } catch {
+                    // A valid Yandex ID token can be accepted even when the
+                    // Music profile endpoint is temporarily unavailable.
+                    return try await oauth.fetchProfile(accessToken: value)
+                }
             }
         case .gateway:
             let url = (try? configuration.validatedURL()) ?? URL(string: "https://invalid.invalid")!
@@ -37,7 +44,7 @@ final class AppContainer: ObservableObject {
             }
         case .demo:
             service = AnyMusicService(DemoMusicService())
-            profile = { _ in UserProfile(id: "demo", displayName: "Локальная демоверсия", avatarURL: nil) }
+            profile = { _ in UserProfile(id: "demo", displayName: "Локальный профиль", avatarURL: nil) }
         }
         auth = AuthStore(configuration: configuration, vault: vault, profileLoader: profile)
         offlineStore = OfflineStore()

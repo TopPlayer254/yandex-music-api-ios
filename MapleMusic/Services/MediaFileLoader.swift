@@ -5,8 +5,9 @@ enum MediaFileLoader {
     static func fileExtension(for asset: PlaybackAsset) -> String {
         switch asset.codec.lowercased() {
         case "flac": return "flac"
-        case "aac", "he-aac": return "aac"
-        case "alac", "flac-mp4", "aac-mp4", "he-aac-mp4": return "m4a"
+        // Yandex labels these codecs as AAC, but get-file-info returns them in
+        // an ISO Base Media container. The m4a extension avoids AVPlayer -50.
+        case "aac", "he-aac", "alac", "flac-mp4", "aac-mp4", "he-aac-mp4": return "m4a"
         case "mp3": return "mp3"
         default: return "wav"
         }

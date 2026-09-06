@@ -57,7 +57,21 @@ private struct ModernTabs: View {
     @EnvironmentObject private var player: PlayerStore
     @Binding var selection: AppTab
 
+    @ViewBuilder
     var body: some View {
+        if let track = player.currentTrack {
+            tabs
+                .tabBarMinimizeBehavior(.onScrollDown)
+                .tabViewBottomAccessory {
+                    ModernMiniPlayer(track: track)
+                }
+        } else {
+            tabs
+                .tabBarMinimizeBehavior(.onScrollDown)
+        }
+    }
+
+    private var tabs: some View {
         TabView(selection: $selection) {
             Tab("Главная", systemImage: "house.fill", value: AppTab.home) {
                 HomeView()
@@ -65,14 +79,8 @@ private struct ModernTabs: View {
             Tab("Медиатека", systemImage: "square.stack.fill", value: AppTab.library) {
                 LibraryView()
             }
-            Tab("Поиск", systemImage: "magnifyingglass", value: AppTab.search) {
+            Tab("Поиск", systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
                 SearchView()
-            }
-        }
-        .tabBarMinimizeBehavior(.onScrollDown)
-        .tabViewBottomAccessory {
-            if let track = player.currentTrack {
-                ModernMiniPlayer(track: track)
             }
         }
     }
@@ -126,38 +134,46 @@ private struct ModernMiniPlayer: View {
     var body: some View {
         if placement == .inline {
             HStack(spacing: 8) {
-                ArtworkView(artwork: track.artwork, cornerRadius: 6)
-                    .frame(width: 30, height: 30)
-                Text(track.title)
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                Spacer(minLength: 2)
-                playbackButton(size: 30)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { player.isShowingNowPlaying = true }
-        } else {
-            HStack(spacing: 11) {
-                ArtworkView(artwork: track.artwork, cornerRadius: 7)
-                    .frame(width: 44, height: 44)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(track.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    Text(track.artist.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Button { player.isShowingNowPlaying = true } label: {
+                    HStack(spacing: 8) {
+                        ArtworkView(artwork: track.artwork, cornerRadius: 6)
+                            .frame(width: 28, height: 28)
+                        Text(track.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Spacer(minLength: 2)
+                    }
+                    .contentShape(Rectangle())
                 }
-                Spacer(minLength: 6)
+                .buttonStyle(.plain)
+                playbackButton(size: 32)
+            }
+        } else {
+            HStack(spacing: 8) {
+                Button { player.isShowingNowPlaying = true } label: {
+                    HStack(spacing: 10) {
+                        ArtworkView(artwork: track.artwork, cornerRadius: 7)
+                            .frame(width: 44, height: 44)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(track.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
+                            Text(track.artist.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 if player.isBuffering { ProgressView().controlSize(.small) }
-                playbackButton(size: 38)
+                playbackButton(size: 44)
                 Button { player.next() } label: {
-                    Image(systemName: "forward.fill")
-                        .frame(width: 34, height: 38)
+                    Image(systemName: "forward.fill").frame(width: 38, height: 44)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Следующий трек")
             }
-            .padding(.horizontal, 10)
-            .overlay(alignment: .bottom) { progressBar }
-            .contentShape(Rectangle())
-            .onTapGesture { player.isShowingNowPlaying = true }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
         }
     }
 
@@ -171,14 +187,6 @@ private struct ModernMiniPlayer: View {
         .accessibilityLabel(player.isPlaying ? "Пауза" : "Воспроизвести")
     }
 
-    private var progressBar: some View {
-        GeometryReader { proxy in
-            Capsule()
-                .fill(.tint)
-                .frame(width: proxy.size.width * player.progress, height: 2)
-        }
-        .frame(height: 2)
-    }
 }
 
 private struct LegacyMiniPlayer: View {
@@ -186,43 +194,39 @@ private struct LegacyMiniPlayer: View {
     let track: Track
 
     var body: some View {
-        HStack(spacing: 11) {
-            ArtworkView(artwork: track.artwork, cornerRadius: 7)
-                .frame(width: 44, height: 44)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(track.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                Text(track.artist.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        HStack(spacing: 8) {
+            Button { player.isShowingNowPlaying = true } label: {
+                HStack(spacing: 10) {
+                    ArtworkView(artwork: track.artwork, cornerRadius: 7)
+                        .frame(width: 44, height: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(track.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
+                        Text(track.artist.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
-            Spacer(minLength: 6)
+            .buttonStyle(.plain)
             if player.isBuffering { ProgressView().controlSize(.small) }
             Button { player.togglePlayback() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.title3)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 44, height: 44)
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(player.isPlaying ? "Пауза" : "Воспроизвести")
             Button { player.next() } label: {
                 Image(systemName: "forward.fill")
-                    .frame(width: 34, height: 38)
+                    .frame(width: 38, height: 44)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Следующий трек")
         }
-        .padding(6)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
         .adaptiveGlass(in: RoundedRectangle(cornerRadius: 15, style: .continuous), interactive: true)
-        .overlay(alignment: .bottom) {
-            GeometryReader { proxy in
-                Capsule()
-                    .fill(.tint)
-                    .frame(width: proxy.size.width * player.progress, height: 2)
-            }
-            .frame(height: 2)
-            .padding(.horizontal, 10)
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-        .onTapGesture { player.isShowingNowPlaying = true }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Сейчас играет \(track.title), \(track.artist.name)")
     }

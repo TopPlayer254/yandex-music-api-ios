@@ -53,7 +53,7 @@ actor DemoMusicService: MusicService {
             Playlist(
                 id: "demo-favorites",
                 name: "Главное от Maple",
-                description: "Небольшой демоплейлист, доступный офлайн.",
+                description: "Небольшой плейлист, доступный офлайн.",
                 artwork: Artwork(colors: ["FF375F", "5E5CE6"]),
                 tracks: demoTracks,
                 isEditable: true
@@ -69,7 +69,7 @@ actor DemoMusicService: MusicService {
                 MusicShelf(
                     id: "made-for-you",
                     title: "Для вас",
-                    subtitle: "Локальная демоверсия без телеметрии",
+                    subtitle: "Работает без подключения к сети",
                     layout: .cards,
                     tracks: tracks
                 ),

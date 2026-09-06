@@ -38,7 +38,17 @@ final class ProviderSettings: ObservableObject {
     @Published private(set) var generation = UUID()
     init() {
         if let data = UserDefaults.standard.data(forKey: "provider-configuration"),
-           let configuration = try? JSONDecoder().decode(ProviderConfiguration.self, from: data) {
+           var configuration = try? JSONDecoder().decode(ProviderConfiguration.self, from: data) {
+            // 0.3 persisted File info as a normal choice even though its raw
+            // encraw output may require remuxing before AVPlayer can open it.
+            if configuration.kind == .yandex, configuration.streamAPI == .modern,
+               !UserDefaults.standard.bool(forKey: "did-migrate-stream-api-0.4") {
+                configuration.streamAPI = .automatic
+                if let migrated = try? JSONEncoder().encode(configuration) {
+                    UserDefaults.standard.set(migrated, forKey: "provider-configuration")
+                }
+            }
+            UserDefaults.standard.set(true, forKey: "did-migrate-stream-api-0.4")
             self.configuration = configuration
         } else { configuration = ProviderConfiguration() }
     }

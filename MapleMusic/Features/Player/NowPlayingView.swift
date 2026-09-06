@@ -66,7 +66,6 @@ struct NowPlayingView: View {
                     .frame(width: 42, height: 42)
             }
             .buttonStyle(.plain)
-            .adaptiveGlass(in: Circle(), interactive: true)
 
             VStack(spacing: 2) {
                 Text(page.title.uppercased())
@@ -111,7 +110,6 @@ struct NowPlayingView: View {
                     .frame(width: 42, height: 42)
             }
             .buttonStyle(.plain)
-            .adaptiveGlass(in: Circle(), interactive: true)
         }
         .foregroundStyle(.white)
         .frame(height: 46)
@@ -120,20 +118,20 @@ struct NowPlayingView: View {
     private var playerPage: some View {
         GeometryReader { proxy in
             let compact = proxy.size.height < 620
-            let artworkSide = min(proxy.size.width - 52, proxy.size.height * (compact ? 0.38 : 0.48))
+            let artworkSide = min(proxy.size.width - 56, proxy.size.height * (compact ? 0.36 : 0.44))
 
-            VStack(spacing: compact ? 9 : 15) {
-                Spacer(minLength: compact ? 4 : 12)
+            VStack(spacing: compact ? 10 : 18) {
+                Spacer(minLength: compact ? 8 : 18)
 
                 if let track = player.currentTrack {
-                    ArtworkView(artwork: track.artwork, cornerRadius: compact ? 16 : 20)
+                    ArtworkView(artwork: track.artwork, cornerRadius: compact ? 12 : 16)
                         .frame(width: artworkSide, height: artworkSide)
-                        .shadow(color: .black.opacity(0.38), radius: 24, y: 14)
+                        .shadow(color: .black.opacity(0.14), radius: 12, y: 6)
                         .scaleEffect(player.isPlaying ? 1 : 0.94)
                         .animation(.spring(response: 0.5, dampingFraction: 0.82), value: player.isPlaying)
                 }
 
-                Spacer(minLength: compact ? 4 : 12)
+                Spacer(minLength: compact ? 6 : 12)
                 metadata
                 scrubber
                 transportControls(compact: compact)
@@ -141,7 +139,7 @@ struct NowPlayingView: View {
                 Spacer(minLength: 2)
             }
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, 26)
+            .padding(.horizontal, 28)
         }
     }
 
@@ -155,11 +153,6 @@ struct NowPlayingView: View {
                     .font(.title3)
                     .foregroundStyle(.white.opacity(0.68))
                     .lineLimit(1)
-                if let asset = player.resolvedAsset {
-                    Text(qualityLabel(asset))
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.58))
-                }
             }
 
             Spacer(minLength: 8)
@@ -182,12 +175,14 @@ struct NowPlayingView: View {
 
     private var scrubber: some View {
         VStack(spacing: 3) {
-            Slider(
+            MinimalTrackSlider(
                 value: Binding(get: { player.currentTime }, set: player.seek),
-                in: 0 ... max(player.duration, 1)
+                range: 0 ... max(player.duration, 1),
+                activeColor: .white.opacity(0.9),
+                inactiveColor: .white.opacity(0.24)
             )
-            .tint(.white)
             .accessibilityLabel("Позиция воспроизведения")
+            .accessibilityValue(player.currentTime.musicTime)
 
             HStack {
                 Text(player.currentTime.musicTime)
@@ -228,27 +223,21 @@ struct NowPlayingView: View {
     private var volumeControl: some View {
         HStack(spacing: 10) {
             Image(systemName: "speaker.fill")
-            Slider(value: $player.volume, in: 0 ... 1)
-                .tint(.white.opacity(0.82))
+            MinimalTrackSlider(
+                value: $player.volume,
+                range: 0 ... 1,
+                activeColor: .white.opacity(0.72),
+                inactiveColor: .white.opacity(0.22)
+            )
                 .accessibilityLabel("Громкость")
+                .accessibilityValue("\(Int(player.volume * 100)) процентов")
             Image(systemName: "speaker.wave.3.fill")
         }
         .font(.caption)
         .foregroundStyle(.white.opacity(0.62))
     }
 
-    @ViewBuilder
     private var pageControls: some View {
-        if #available(iOS 26.0, *) {
-            GlassEffectContainer(spacing: 28) {
-                pageControlButtons
-            }
-        } else {
-            pageControlButtons
-        }
-    }
-
-    private var pageControlButtons: some View {
         HStack {
             Button { page = page == .lyrics ? .player : .lyrics } label: {
                 Image(systemName: "quote.bubble")
@@ -256,14 +245,12 @@ struct NowPlayingView: View {
                     .foregroundStyle(page == .lyrics ? appearance.tint : .white)
             }
             .buttonStyle(.plain)
-            .adaptiveGlass(in: Circle(), interactive: true)
             .accessibilityLabel("Текст песни")
 
             Spacer()
             AirPlayButton()
                 .frame(width: 20, height: 20)
-                .padding(12)
-                .adaptiveGlass(in: Circle(), interactive: true)
+                .frame(width: 44, height: 44)
                 .accessibilityLabel("AirPlay")
 
             Spacer()
@@ -273,7 +260,6 @@ struct NowPlayingView: View {
                     .foregroundStyle(page == .queue ? appearance.tint : .white)
             }
             .buttonStyle(.plain)
-            .adaptiveGlass(in: Circle(), interactive: true)
             .accessibilityLabel("Очередь")
         }
         .font(.title3)
@@ -287,12 +273,47 @@ struct NowPlayingView: View {
         }
     }
 
-    private func qualityLabel(_ asset: PlaybackAsset) -> String {
-        var values = [asset.quality == .lossless ? "LOSSLESS" : asset.quality.title.uppercased(), asset.codec.uppercased()]
-        if let bitDepth = asset.bitDepth, let sampleRate = asset.sampleRate {
-            values.append("\(bitDepth) БИТ · \(sampleRate / 1_000) КГЦ")
+}
+
+private struct MinimalTrackSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let activeColor: Color
+    let inactiveColor: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let span = max(range.upperBound - range.lowerBound, .leastNonzeroMagnitude)
+            let fraction = min(max((value - range.lowerBound) / span, 0), 1)
+
+            ZStack(alignment: .leading) {
+                Capsule().fill(inactiveColor)
+                Capsule()
+                    .fill(activeColor)
+                    .frame(width: width * fraction)
+            }
+            .frame(height: 4)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        let newFraction = min(max(gesture.location.x / width, 0), 1)
+                        value = range.lowerBound + newFraction * span
+                    }
+            )
         }
-        return values.joined(separator: " · ")
+        .frame(height: 28)
+        .accessibilityElement()
+        .accessibilityAdjustableAction { direction in
+            let step = max((range.upperBound - range.lowerBound) / 20, 0.05)
+            switch direction {
+            case .increment: value = min(value + step, range.upperBound)
+            case .decrement: value = max(value - step, range.lowerBound)
+            @unknown default: break
+            }
+        }
     }
 }
 
