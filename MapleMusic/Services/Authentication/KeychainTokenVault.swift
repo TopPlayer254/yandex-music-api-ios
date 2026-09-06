@@ -121,9 +121,19 @@ actor KeychainTokenVault {
     init(account: String = "yandex-token") { self.account = account }
 
     func load() throws -> OAuthToken? {
+        // The protected app-container copy is the source of truth for sideloads:
+        // some signing methods accept SecItemAdd but fail the next read.
+        do {
+            if let token = try ProtectedFileCodableStore.load(service: service, account: account, as: OAuthToken.self) {
+                return token
+            }
+        } catch {
+            try? ProtectedFileCodableStore.clear(service: service, account: account)
+        }
         for candidate in [service, legacyService] {
             do {
                 if let token = try KeychainCodableStore.load(service: candidate, account: account, as: OAuthToken.self) {
+                    try? ProtectedFileCodableStore.save(token, service: service, account: account)
                     if candidate == legacyService {
                         try? KeychainCodableStore.save(token, service: service, account: account)
                     }
@@ -135,16 +145,12 @@ actor KeychainTokenVault {
                 // keeps sign-in usable without exposing the token in Documents.
             }
         }
-        return try ProtectedFileCodableStore.load(service: service, account: account, as: OAuthToken.self)
+        return nil
     }
 
     func save(_ token: OAuthToken) throws {
-        do {
-            try KeychainCodableStore.save(token, service: service, account: account)
-            try? ProtectedFileCodableStore.clear(service: service, account: account)
-        } catch {
-            try ProtectedFileCodableStore.save(token, service: service, account: account)
-        }
+        try ProtectedFileCodableStore.save(token, service: service, account: account)
+        try? KeychainCodableStore.save(token, service: service, account: account)
     }
 
     func clear() throws {
@@ -160,20 +166,24 @@ actor BackendSessionVault {
 
     func load() throws -> BackendSession? {
         do {
+            if let session = try ProtectedFileCodableStore.load(service: service, account: account, as: BackendSession.self) {
+                return session
+            }
+        } catch {
+            try? ProtectedFileCodableStore.clear(service: service, account: account)
+        }
+        do {
             if let session = try KeychainCodableStore.load(service: service, account: account, as: BackendSession.self) {
+                try? ProtectedFileCodableStore.save(session, service: service, account: account)
                 return session
             }
         } catch { }
-        return try ProtectedFileCodableStore.load(service: service, account: account, as: BackendSession.self)
+        return nil
     }
 
     func save(_ session: BackendSession) throws {
-        do {
-            try KeychainCodableStore.save(session, service: service, account: account)
-            try? ProtectedFileCodableStore.clear(service: service, account: account)
-        } catch {
-            try ProtectedFileCodableStore.save(session, service: service, account: account)
-        }
+        try ProtectedFileCodableStore.save(session, service: service, account: account)
+        try? KeychainCodableStore.save(session, service: service, account: account)
     }
 
     func clear() throws {

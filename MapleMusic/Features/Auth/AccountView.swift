@@ -172,6 +172,7 @@ private struct AppearanceSettingsView: View {
 
 private struct AccountSettingsView: View {
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var player: PlayerStore
     @EnvironmentObject private var settings: ProviderSettings
     @StateObject private var deviceLogin = YandexDeviceLogin()
@@ -208,7 +209,7 @@ private struct AccountSettingsView: View {
                     Section {
                         Button("Войти через Яндекс") {
                             deviceLogin.start { value in
-                                if await auth.importToken(value) { settings.reloadSession() }
+                                if await auth.importToken(value) { await container.loadCurrentAccount() }
                             }
                         }
                         .disabled(deviceLogin.isRunning)
@@ -217,8 +218,10 @@ private struct AccountSettingsView: View {
                             LabeledContent("Код") {
                                 Text(code).font(.headline.monospaced()).textSelection(.enabled)
                             }
-                            if let url = deviceLogin.verificationURL {
-                                Link("Открыть страницу входа", destination: url)
+                            if deviceLogin.verificationURL != nil {
+                                Button("Открыть временное окно входа") {
+                                    deviceLogin.openVerificationPage()
+                                }
                             }
                             HStack(spacing: 10) {
                                 ProgressView()
@@ -242,7 +245,7 @@ private struct AccountSettingsView: View {
                         Task {
                             let value = token
                             token = ""
-                            if await auth.importToken(value) { settings.reloadSession() }
+                            if await auth.importToken(value) { await container.loadCurrentAccount() }
                             isChecking = false
                         }
                     }
@@ -427,7 +430,7 @@ private struct AboutSettingsView: View {
 
             Section("Конфиденциальность") {
                 Label("Без аналитики и рекламных SDK", systemImage: "hand.raised.fill")
-                Label("Токены хранятся в Связке ключей", systemImage: "key.fill")
+                Label("Сессия защищена Keychain и Data Protection", systemImage: "key.fill")
                 Text("Офлайн-файлы защищены механизмом Data Protection в iOS.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)

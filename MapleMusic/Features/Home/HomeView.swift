@@ -9,7 +9,7 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let home = catalog.home {
+                if let home = catalog.home, hasContent(home) {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 28) {
                             featured(home.featured)
@@ -30,23 +30,40 @@ struct HomeView: View {
                         Button("Открыть настройки") { showsAccount = true }
                             .buttonStyle(.borderedProminent)
                     }
+                } else if let error = catalog.homeErrorMessage {
+                    ContentUnavailableView {
+                        Label("Не удалось загрузить главную", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("Повторить") { Task { await catalog.refreshHome() } }
+                            .buttonStyle(.borderedProminent)
+                        Button("Открыть настройки") { showsAccount = true }
+                    }
                 } else {
-                    ContentUnavailableView(
-                        "Главная недоступна",
-                        systemImage: "music.note.house",
-                        description: Text(catalog.errorMessage ?? "Повторите попытку чуть позже.")
-                    )
+                    ContentUnavailableView {
+                        Label("Пока нет рекомендаций", systemImage: "music.note.house")
+                    } description: {
+                        Text("Откройте поиск или обновите страницу немного позже.")
+                    } actions: {
+                        Button("Обновить") { Task { await catalog.refreshHome() } }
+                            .buttonStyle(.borderedProminent)
+                    }
                 }
             }
-            .navigationTitle(catalog.home?.greeting ?? "Главная")
+            .navigationTitle("Главная")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     AccountToolbarButton(isPresented: $showsAccount)
                 }
             }
-            .refreshable { await catalog.bootstrap() }
+            .refreshable { await catalog.refreshHome() }
             .sheet(isPresented: $showsAccount) { AccountView() }
         }
+    }
+
+    private func hasContent(_ home: HomeFeed) -> Bool {
+        !home.featured.isEmpty || home.shelves.contains { !$0.tracks.isEmpty }
     }
 
     private func featured(_ tracks: [Track]) -> some View {

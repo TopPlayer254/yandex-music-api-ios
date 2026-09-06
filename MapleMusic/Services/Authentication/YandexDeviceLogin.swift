@@ -1,13 +1,17 @@
+import AuthenticationServices
 import Combine
 import Foundation
+import UIKit
 
 @MainActor
-final class YandexDeviceLogin: ObservableObject {
+final class YandexDeviceLogin: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
     @Published private(set) var userCode: String?
     @Published private(set) var verificationURL: URL?
     @Published private(set) var isRunning = false
     @Published var error: String?
     private var task: Task<Void, Never>?
+    private var webSession: ASWebAuthenticationSession?
+    private var webSessionID: UUID?
     // Public device-client parameters used by yandex-music-api; server acceptance
     // can change. An account token can also be entered directly in Settings.
     private let clientID = "23cabbbdc6cd418abb4b39c32c41195d"
@@ -31,6 +35,7 @@ final class YandexDeviceLogin: ObservableObject {
                 }
                 self.userCode = userCode
                 self.verificationURL = url
+                openVerificationPage()
                 let deadline = Date().addingTimeInterval(code["expires_in"].number ?? 600)
                 var interval = max(code["interval"].number ?? 5, 5)
                 while Date() < deadline {
@@ -39,6 +44,9 @@ final class YandexDeviceLogin: ObservableObject {
                         "client_id": clientID, "client_secret": clientSecret])
                     try Task.checkCancellation()
                     if let token = result["access_token"].string {
+                        webSession?.cancel()
+                        webSession = nil
+                        webSessionID = nil
                         await receive(token)
                         return
                     }
@@ -59,10 +67,43 @@ final class YandexDeviceLogin: ObservableObject {
     func cancel() {
         task?.cancel()
         task = nil
+        webSession?.cancel()
+        webSession = nil
+        webSessionID = nil
         isRunning = false
         userCode = nil
         verificationURL = nil
     }
+
+    func openVerificationPage() {
+        guard let verificationURL else { return }
+        webSession?.cancel()
+        let sessionID = UUID()
+        let session = ASWebAuthenticationSession(url: verificationURL, callbackURLScheme: nil) { [weak self] _, _ in
+            Task { @MainActor in
+                guard self?.webSessionID == sessionID else { return }
+                self?.webSession = nil
+                self?.webSessionID = nil
+            }
+        }
+        session.presentationContextProvider = self
+        session.prefersEphemeralWebBrowserSession = true
+        webSession = session
+        webSessionID = sessionID
+        if !session.start() {
+            webSession = nil
+            webSessionID = nil
+            error = "Не удалось открыть временное окно Яндекс ID. Нажмите кнопку открытия ещё раз."
+        }
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        if let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) { return window }
+        if let scene = scenes.first, let window = scene.windows.first { return window }
+        return ASPresentationAnchor()
+    }
+
     private func post(_ path: String, fields: [String: String]) async throws -> YandexJSON {
         var request = URLRequest(url: URL(string: "https://oauth.yandex.ru/\(path)")!)
         request.httpMethod = "POST"

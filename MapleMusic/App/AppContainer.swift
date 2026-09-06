@@ -1,5 +1,4 @@
 import Combine
-import CryptoKit
 import Foundation
 
 @MainActor
@@ -26,15 +25,10 @@ final class AppContainer: ObservableObject {
             let api = YandexMusicService(baseURL: url, streamAPI: configuration.streamAPI, token: token)
             service = AnyMusicService(api)
             let streamAPI = configuration.streamAPI
-            let oauth = YandexOAuthClient()
             profile = { value in
-                do {
-                    return try await YandexMusicService(baseURL: url, streamAPI: streamAPI, token: { value }).profile()
-                } catch {
-                    // A valid Yandex ID token can be accepted even when the
-                    // Music profile endpoint is temporarily unavailable.
-                    return try await oauth.fetchProfile(accessToken: value)
-                }
+                // A successful login must also authorize the Music API. Accepting
+                // a Yandex ID-only profile creates a signed-in UI with no catalogue.
+                try await YandexMusicService(baseURL: url, streamAPI: streamAPI, token: { value }).profile()
             }
         case .gateway:
             let url = (try? configuration.validatedURL()) ?? URL(string: "https://invalid.invalid")!
@@ -55,6 +49,10 @@ final class AppContainer: ObservableObject {
 
     func bootstrap() async {
         await auth.restore()
+        await loadCurrentAccount()
+    }
+
+    func loadCurrentAccount() async {
         let account: String
         if case let .signedIn(profile) = auth.state { account = profile.id }
         else { account = configuration.kind == .demo ? "demo" : "signed-out" }

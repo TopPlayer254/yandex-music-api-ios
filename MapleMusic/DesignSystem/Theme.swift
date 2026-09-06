@@ -44,7 +44,7 @@ final class AppearanceSettings: ObservableObject {
     }
 
     init() {
-        accent = AccentColorChoice(rawValue: UserDefaults.standard.string(forKey: "accent-color") ?? "") ?? .musicRed
+        accent = AccentColorChoice(rawValue: UserDefaults.standard.string(forKey: "accent-color") ?? "") ?? .yandexYellow
     }
 
     var tint: Color { accent.color }

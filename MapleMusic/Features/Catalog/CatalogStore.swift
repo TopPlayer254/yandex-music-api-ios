@@ -8,6 +8,9 @@ final class CatalogStore: ObservableObject {
     @Published private(set) var searchResults: [Track] = []
     @Published private(set) var isLoading = false
     @Published private(set) var isSearching = false
+    @Published private(set) var homeErrorMessage: String?
+    @Published private(set) var libraryErrorMessage: String?
+    @Published private(set) var searchErrorMessage: String?
     @Published var errorMessage: String?
 
     private let service: AnyMusicService
@@ -19,17 +22,43 @@ final class CatalogStore: ObservableObject {
 
     func bootstrap() async {
         isLoading = true
-        errorMessage = nil
-        do { home = try await service.home() } catch { errorMessage = error.localizedDescription }
-        await refreshLibrary()
-        isLoading = false
+        defer { isLoading = false }
+        async let homeLoad: Void = refreshHome()
+        async let libraryLoad: Void = refreshLibrary()
+        _ = await (homeLoad, libraryLoad)
+        if home == nil, let library, !library.recentlyAdded.isEmpty {
+            home = HomeFeed(
+                greeting: "Слушать сейчас",
+                featured: Array(library.recentlyAdded.prefix(5)),
+                shelves: [MusicShelf(
+                    id: "library-fallback",
+                    title: "Из медиатеки",
+                    subtitle: "Недавно добавленные треки",
+                    layout: .list,
+                    tracks: library.recentlyAdded
+                )]
+            )
+            homeErrorMessage = nil
+        }
+    }
+
+    func refreshHome() async {
+        do {
+            home = try await service.home()
+            homeErrorMessage = nil
+        } catch {
+            guard !Self.isCancellation(error) else { return }
+            homeErrorMessage = error.localizedDescription
+        }
     }
 
     func refreshLibrary() async {
         do {
             library = try await service.library()
+            libraryErrorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            guard !Self.isCancellation(error) else { return }
+            libraryErrorMessage = error.localizedDescription
         }
     }
 
@@ -38,6 +67,7 @@ final class CatalogStore: ObservableObject {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             searchResults = []
+            searchErrorMessage = nil
             isSearching = false
             return
         }
@@ -49,13 +79,13 @@ final class CatalogStore: ObservableObject {
                 let results = try await service.search(query: trimmed)
                 guard !Task.isCancelled else { return }
                 searchResults = results
-                errorMessage = nil
+                searchErrorMessage = nil
             } catch is CancellationError {
                 return
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, !Self.isCancellation(error) else { return }
                 searchResults = []
-                errorMessage = error.localizedDescription
+                searchErrorMessage = error.localizedDescription
             }
             isSearching = false
         }
@@ -95,5 +125,9 @@ final class CatalogStore: ObservableObject {
     func toggleFavorite(_ track: Track) async {
         do { try await service.setFavorite(trackID: track.id, isFavorite: !isFavorite(track)); await refreshLibrary() }
         catch { errorMessage = error.localizedDescription }
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 }

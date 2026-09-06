@@ -53,10 +53,35 @@ actor YandexMusicService: MusicService {
     }
 
     func home() async throws -> HomeFeed {
-        let result = try await request("rotor/station/user:onyourwave/tracks", query: ["settings2": "true"])
-        let tracks = result["sequence"].array.compactMap { $0["track"].track() }
+        do {
+            let result = try await request("rotor/station/user:onyourwave/tracks", query: ["settings2": "true"])
+            let tracks = result["sequence"].array.compactMap { $0["track"].track() }
+            if !tracks.isEmpty {
+                return HomeFeed(greeting: "Слушать сейчас", featured: Array(tracks.prefix(5)), shelves: [
+                    MusicShelf(id: "my-wave", title: "Моя волна", subtitle: "Для вас", layout: .list, tracks: tracks)
+                ])
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
+        } catch { }
+
+        // The personalized rotor can be unavailable independently of the
+        // account. The public chart still gives the signed-in user real tracks
+        // to browse and test playback with.
+        let result = try await request("landing3/chart")
+        let chart = result["chart"]
+        let tracks = chart["tracks"].array.compactMap { $0["track"].track() ?? $0.track() }
+        guard !tracks.isEmpty else { throw MusicServiceError.invalidResponse }
         return HomeFeed(greeting: "Слушать сейчас", featured: Array(tracks.prefix(5)), shelves: [
-            MusicShelf(id: "my-wave", title: "Моя волна", subtitle: "Для вас", layout: .list, tracks: tracks)
+            MusicShelf(
+                id: "chart",
+                title: result["title"].string ?? chart["title"].string ?? "Чарт",
+                subtitle: "Популярные треки",
+                layout: .list,
+                tracks: tracks
+            )
         ])
     }
 
@@ -294,10 +319,16 @@ actor YandexMusicService: MusicService {
         request.timeoutInterval = 30
         request.setValue("OAuth \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("MapleMusic/0.5", forHTTPHeaderField: "User-Agent")
-        request.setValue("YandexMusicDesktopAppWindows/5.0.0", forHTTPHeaderField: "X-Yandex-Music-Client")
-        request.setValue("new", forHTTPHeaderField: "X-Yandex-Music-Frontend")
-        request.setValue("1", forHTTPHeaderField: "X-Yandex-Music-Without-Invocation-Info")
+        request.setValue("MapleMusic/0.6", forHTTPHeaderField: "User-Agent")
+        if path == "get-file-info" {
+            request.setValue("YandexMusicDesktopAppWindows/5.0.0", forHTTPHeaderField: "X-Yandex-Music-Client")
+            request.setValue("new", forHTTPHeaderField: "X-Yandex-Music-Frontend")
+            request.setValue("1", forHTTPHeaderField: "X-Yandex-Music-Without-Invocation-Info")
+        } else {
+            // Account, library, search and rotor requests follow the Android
+            // client used by the device-flow token and the reference library.
+            request.setValue("YandexMusicAndroid/24023621", forHTTPHeaderField: "X-Yandex-Music-Client")
+        }
         if let form {
             request.httpMethod = "POST"
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")

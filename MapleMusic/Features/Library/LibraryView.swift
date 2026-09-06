@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct LibraryView: View {
+    @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var catalog: CatalogStore
     @EnvironmentObject private var downloads: DownloadsStore
     @State private var showsAccount = false
@@ -51,8 +52,31 @@ struct LibraryView: View {
                     .listStyle(.insetGrouped)
                 } else if catalog.isLoading {
                     LibraryLoadingPlaceholder()
+                } else if auth.state == .signedOut {
+                    ContentUnavailableView {
+                        Label("Войдите в аккаунт", systemImage: "person.crop.circle")
+                    } description: {
+                        Text("После входа здесь появятся любимые треки и плейлисты.")
+                    } actions: {
+                        Button("Открыть настройки") { showsAccount = true }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else if let error = catalog.libraryErrorMessage {
+                    ContentUnavailableView {
+                        Label("Не удалось загрузить медиатеку", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("Повторить") { Task { await catalog.refreshLibrary() } }
+                            .buttonStyle(.borderedProminent)
+                        Button("Открыть настройки") { showsAccount = true }
+                    }
                 } else {
-                    ContentUnavailableView("Медиатека недоступна", systemImage: "square.stack")
+                    ContentUnavailableView(
+                        "Медиатека пуста",
+                        systemImage: "square.stack",
+                        description: Text("Добавленные в аккаунте треки и плейлисты появятся здесь.")
+                    )
                 }
             }
             .navigationTitle("Медиатека")

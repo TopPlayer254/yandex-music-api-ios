@@ -38,6 +38,15 @@ struct SearchView: View {
                     SearchLoadingPlaceholder()
                 } else if query.isEmpty {
                     ContentUnavailableView("Найдите свою музыку", systemImage: "magnifyingglass", description: Text("Ищите по треку, артисту или альбому."))
+                } else if let error = catalog.searchErrorMessage {
+                    ContentUnavailableView {
+                        Label("Поиск не выполнен", systemImage: "exclamationmark.magnifyingglass")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("Повторить") { catalog.scheduleSearch(query) }
+                            .buttonStyle(.borderedProminent)
+                    }
                 } else if catalog.searchResults.isEmpty {
                     ContentUnavailableView.search(text: query)
                 }
