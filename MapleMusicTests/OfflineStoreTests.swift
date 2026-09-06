@@ -34,13 +34,18 @@ final class OfflineStoreTests: XCTestCase {
         let restored = await reopened.entries()
         XCTAssertEqual(restored.first?.track, track)
 
+        let userFile = root.appendingPathComponent("offline/notes.txt")
+        try Data("keep".utf8).write(to: userFile)
+        try await reopened.removeAll()
+        let entriesAfterClear = await reopened.entries()
+        let containsAfterClear = await reopened.contains(trackID: track.id)
+        XCTAssertTrue(entriesAfterClear.isEmpty)
+        XCTAssertFalse(containsAfterClear)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: userFile.path))
+
         await store.setScope("another-account")
         let otherAccountAsset = await store.localAsset(for: track)
         XCTAssertNil(otherAccountAsset)
-
-        try await reopened.remove(trackID: track.id)
-        let containsAfterRemoval = await reopened.contains(trackID: track.id)
-        XCTAssertFalse(containsAfterRemoval)
     }
 
     func testRejectsAssetWithoutDownloadPermission() async {

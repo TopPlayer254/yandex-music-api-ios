@@ -38,6 +38,9 @@ project = yaml.safe_load((ROOT / "project.yml").read_text())
 sources = project["targets"]["MapleMusic"]["sources"]
 assert any(item["path"] == "MapleMusic/Resources" for item in sources)
 assert project["settings"]["base"]["SWIFT_VERSION"] == "5.0"
+info = project["targets"]["MapleMusic"]["info"]["properties"]
+assert info["UIFileSharingEnabled"] is True
+assert info["LSSupportsOpeningDocumentsInPlace"] is True
 if failures:
     print("\n".join(failures))
     sys.exit(1)

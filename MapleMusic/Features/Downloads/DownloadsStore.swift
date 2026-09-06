@@ -46,4 +46,14 @@ final class DownloadsStore: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+
+    func removeAll() async {
+        errorMessage = nil
+        do {
+            try await offlineStore.removeAll()
+            await refresh()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }

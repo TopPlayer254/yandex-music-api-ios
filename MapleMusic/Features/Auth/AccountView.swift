@@ -159,6 +159,7 @@ private struct AccountSettingsView: View {
     @StateObject private var deviceLogin = YandexDeviceLogin()
     @State private var token = ""
     @State private var isChecking = false
+    @State private var showsClearSessionConfirmation = false
 
     var body: some View {
         Form {
@@ -174,17 +175,15 @@ private struct AccountSettingsView: View {
                     Label(profile.displayName, systemImage: "person.crop.circle.fill")
                 }
                 Section {
-                    Button("Выйти", role: .destructive) {
-                        Task {
-                            player.stop()
-                            await auth.signOut()
-                            if auth.state == .signedOut { settings.reloadSession() }
-                        }
+                    Button("Очистить сессию и выйти", role: .destructive) {
+                        showsClearSessionConfirmation = true
                     }
+                } footer: {
+                    Text("Локальный токен, кэш профиля, cookies и сетевой кэш будут удалены. Сохранённые треки останутся в хранилище.")
                 }
             } else {
                 if settings.configuration.kind == .yandex {
-                    Section("Яндекс ID") {
+                    Section {
                         Button("Войти через Яндекс") {
                             deviceLogin.start { value in
                                 if await auth.importToken(value) { settings.reloadSession() }
@@ -205,6 +204,8 @@ private struct AccountSettingsView: View {
                             }
                             Button("Отменить вход", role: .cancel) { deviceLogin.cancel() }
                         }
+                    } header: {
+                        Text("Яндекс ID")
                     } footer: {
                         Text("Приложение покажет одноразовый код и откроет защищённую страницу Яндекс ID.")
                     }
@@ -239,6 +240,22 @@ private struct AccountSettingsView: View {
             deviceLogin.cancel()
             token = ""
         }
+        .confirmationDialog(
+            "Очистить сессию?",
+            isPresented: $showsClearSessionConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Очистить сессию и выйти", role: .destructive) {
+                Task {
+                    player.stop()
+                    await auth.clearSession()
+                    if auth.state == .signedOut { settings.reloadSession() }
+                }
+            }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Для следующего подключения потребуется снова войти в аккаунт.")
+        }
     }
 }
 
@@ -251,17 +268,19 @@ private struct AudioProviderSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Качество звука") {
+            Section {
                 Picker("Качество", selection: $player.preferredQuality) {
                     ForEach(AudioQuality.allCases) { quality in
                         Text(quality.title).tag(quality)
                     }
                 }
+            } header: {
+                Text("Качество звука")
             } footer: {
                 Text(player.preferredQuality.subtitle)
             }
 
-            Section("Музыкальный сервис") {
+            Section {
                 Picker("Провайдер", selection: $draft.kind) {
                     ForEach(ProviderKind.allCases) { Text($0.title).tag($0) }
                 }
@@ -282,6 +301,8 @@ private struct AudioProviderSettingsView: View {
                         ForEach(YandexMusicService.StreamAPI.allCases) { Text($0.title).tag($0) }
                     }
                 }
+            } header: {
+                Text("Музыкальный сервис")
             } footer: {
                 Text("Автоматический режим сначала использует совместимый MP3-поток, а затем File info. Lossless запрашивается через File info, если он доступен треку и аккаунту.")
             }
@@ -316,6 +337,7 @@ private struct AudioProviderSettingsView: View {
 
 private struct StorageSettingsView: View {
     @EnvironmentObject private var downloads: DownloadsStore
+    @State private var showsClearDownloadsConfirmation = false
 
     var body: some View {
         List {
@@ -328,6 +350,16 @@ private struct StorageSettingsView: View {
                 NavigationLink("Загруженные треки") {
                     DownloadsView(allTracks: downloads.entries.compactMap(\.track))
                 }
+                Label("Доступно в «Файлы» → «На iPhone» → Maple Music", systemImage: "folder.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Button("Удалить все сохранённые треки", role: .destructive) {
+                    showsClearDownloadsConfirmation = true
+                }
+                .disabled(downloads.entries.isEmpty)
             }
 
             Section {
@@ -338,6 +370,18 @@ private struct StorageSettingsView: View {
         }
         .navigationTitle("Хранилище")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(
+            "Удалить все сохранённые треки?",
+            isPresented: $showsClearDownloadsConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Удалить все треки", role: .destructive) {
+                Task { await downloads.removeAll() }
+            }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Треки и сохранённые тексты песен будут удалены с устройства.")
+        }
     }
 }
 

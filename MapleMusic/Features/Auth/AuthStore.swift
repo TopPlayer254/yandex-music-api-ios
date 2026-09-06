@@ -68,6 +68,13 @@ final class AuthStore: ObservableObject {
         UserDefaults.standard.removeObject(forKey: cacheKey)
         state = .signedOut
     }
+    func clearSession() async {
+        await signOut()
+        guard state == .signedOut else { return }
+        URLCache.shared.removeAllCachedResponses()
+        HTTPCookieStorage.shared.removeCookies(since: .distantPast)
+        errorMessage = nil
+    }
     private func cache(_ profile: UserProfile) {
         if let data = try? JSONEncoder().encode(profile) { UserDefaults.standard.set(data, forKey: cacheKey) }
     }

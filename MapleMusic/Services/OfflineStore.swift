@@ -30,8 +30,11 @@ actor OfflineStore {
         if let root {
             resolvedRoot = root
         } else {
-            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            resolvedRoot = support.appendingPathComponent("Offline", isDirectory: true)
+            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            resolvedRoot = documents
+                .appendingPathComponent("Maple Music", isDirectory: true)
+                .appendingPathComponent("Загрузки", isDirectory: true)
+            Self.migrateLegacyRootIfNeeded(to: resolvedRoot)
         }
         self.root = resolvedRoot
         self.baseRoot = resolvedRoot
@@ -84,7 +87,7 @@ actor OfflineStore {
         try ensureRoot()
         let activeRoot = root
         let ext = MediaFileLoader.fileExtension(for: asset)
-        let relativePath = "\(safeFileName(track.id))-\(UUID().uuidString).\(ext)"
+        let relativePath = visibleFileName(for: track, extension: ext)
         let destination = root.appendingPathComponent(relativePath)
         guard isInsideRoot(destination) else { throw MusicServiceError.offlineUnavailable }
 
@@ -134,6 +137,18 @@ actor OfflineStore {
         try persistManifest()
     }
 
+    func removeAll() throws {
+        for entry in manifest.entries.values {
+            let target = root.appendingPathComponent(entry.relativePath)
+            guard isInsideRoot(target) else { throw MusicServiceError.offlineUnavailable }
+            if FileManager.default.fileExists(atPath: target.path) {
+                try FileManager.default.removeItem(at: target)
+            }
+        }
+        manifest.entries.removeAll()
+        try persistManifest()
+    }
+
     private func ensureRoot() throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         var resourceValues = URLResourceValues()
@@ -159,5 +174,29 @@ actor OfflineStore {
     private func safeFileName(_ value: String) -> String {
         let digest = SHA256.hash(data: Data(value.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func visibleFileName(for track: Track, extension ext: String) -> String {
+        let source = "\(track.artist.name) – \(track.title)"
+        let forbidden = CharacterSet(charactersIn: "/\\:?%*|\"<>").union(.newlines).union(.controlCharacters)
+        let cleaned = source.unicodeScalars.map { forbidden.contains($0) ? "_" : String($0) }.joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let stem = String((cleaned.isEmpty ? "Трек" : cleaned).prefix(96))
+        return "\(stem)-\(safeFileName(track.id).prefix(8))-\(UUID().uuidString.prefix(6)).\(ext)"
+    }
+
+    private static func migrateLegacyRootIfNeeded(to destination: URL) {
+        let manager = FileManager.default
+        guard !manager.fileExists(atPath: destination.path),
+              let support = manager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        else { return }
+        let legacy = support.appendingPathComponent("Offline", isDirectory: true)
+        guard manager.fileExists(atPath: legacy.path) else { return }
+        do {
+            try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try manager.moveItem(at: legacy, to: destination)
+        } catch {
+            // The old location remains intact; a later launch can retry.
+        }
     }
 }
