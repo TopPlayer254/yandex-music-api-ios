@@ -23,8 +23,12 @@ final class ArtworkImageCache {
         session = URLSession(configuration: configuration)
     }
 
+    func cachedImage(for url: URL) -> UIImage? {
+        memory.object(forKey: url as NSURL)
+    }
+
     func image(for url: URL) async -> UIImage? {
-        if let cached = memory.object(forKey: url as NSURL) { return cached }
+        if let cached = cachedImage(for: url) { return cached }
         if let task = inFlight[url] { return await task.value }
 
         let session = session

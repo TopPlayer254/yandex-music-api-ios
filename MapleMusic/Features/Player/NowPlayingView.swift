@@ -118,9 +118,11 @@ struct NowPlayingView: View {
     private var playerPage: some View {
         GeometryReader { proxy in
             let compact = proxy.size.height < 620
-            let artworkSide = min(proxy.size.width - 64, compact ? 250 : 330)
+            let artworkSide = min(proxy.size.width - 56, proxy.size.height * (compact ? 0.36 : 0.44))
 
             VStack(spacing: compact ? 10 : 18) {
+                Spacer(minLength: compact ? 8 : 18)
+
                 if let track = player.currentTrack {
                     ArtworkView(artwork: track.artwork, cornerRadius: compact ? 12 : 16)
                         .frame(width: artworkSide, height: artworkSide)
@@ -129,15 +131,15 @@ struct NowPlayingView: View {
                         .animation(.spring(response: 0.5, dampingFraction: 0.82), value: player.isPlaying)
                 }
 
+                Spacer(minLength: compact ? 6 : 12)
                 metadata
                 scrubber
                 transportControls(compact: compact)
                 volumeControl
-                Spacer(minLength: 0)
+                Spacer(minLength: 2)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.horizontal, 32)
-            .padding(.top, compact ? 8 : 18)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 28)
         }
     }
 
@@ -193,29 +195,29 @@ struct NowPlayingView: View {
     }
 
     private func transportControls(compact: Bool) -> some View {
-        HStack(spacing: 8) {
+        HStack {
             Button { player.previous() } label: {
                 Image(systemName: "backward.fill")
                     .font(.system(size: compact ? 28 : 32))
                     .frame(width: 58, height: 58)
             }
-            .frame(maxWidth: .infinity)
+            Spacer()
             Button { player.togglePlayback() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: compact ? 42 : 48, weight: .medium))
                     .frame(width: 76, height: 68)
                     .contentTransition(.symbolEffect(.replace))
             }
-            .frame(maxWidth: .infinity)
+            Spacer()
             Button { player.next() } label: {
                 Image(systemName: "forward.fill")
                     .font(.system(size: compact ? 28 : 32))
                     .frame(width: 58, height: 58)
             }
-            .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
+        .padding(.horizontal, 14)
     }
 
     private var volumeControl: some View {
@@ -236,7 +238,7 @@ struct NowPlayingView: View {
     }
 
     private var pageControls: some View {
-        HStack(spacing: 8) {
+        HStack {
             Button { page = page == .lyrics ? .player : .lyrics } label: {
                 Image(systemName: "quote.bubble")
                     .frame(width: 44, height: 44)
@@ -244,12 +246,12 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Текст песни")
-            .frame(maxWidth: .infinity)
+            Spacer()
             AirPlayButton()
                 .frame(width: 20, height: 20)
                 .frame(width: 44, height: 44)
                 .accessibilityLabel("AirPlay")
-                .frame(maxWidth: .infinity)
+            Spacer()
             Button { page = page == .queue ? .player : .queue } label: {
                 Image(systemName: "list.bullet")
                     .frame(width: 44, height: 44)
@@ -257,7 +259,6 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Очередь")
-            .frame(maxWidth: .infinity)
         }
         .font(.title3)
     }
@@ -320,10 +321,11 @@ private struct ArtworkBackdrop: View {
     @State private var image: UIImage?
 
     var body: some View {
+        let displayedImage = image ?? artwork?.url.flatMap { ArtworkImageCache.shared.cachedImage(for: $0) }
         ZStack {
             Color.black
-            if let image {
-                Image(uiImage: image)
+            if let displayedImage {
+                Image(uiImage: displayedImage)
                     .resizable()
                     .scaledToFill()
                     .scaleEffect(drifts ? 1.22 : 1.08)
@@ -343,8 +345,12 @@ private struct ArtworkBackdrop: View {
             }
         }
         .task(id: artwork?.url) {
-            image = nil
             guard let url = artwork?.url else { return }
+            if let cached = ArtworkImageCache.shared.cachedImage(for: url) {
+                image = cached
+                return
+            }
+            image = nil
             image = await ArtworkImageCache.shared.image(for: url)
         }
     }

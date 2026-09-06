@@ -12,7 +12,9 @@ Dates use ISO 8601. Errors use HTTP status codes (401, 403, 404, 409, 429, 5xx).
 | --- | --- |
 | GET /v1/me | UserProfile |
 | GET /v1/home | HomeFeed |
-| GET /v1/search?q=… | [Track] |
+| GET /v1/search?q=… | MusicSearchResults; legacy [Track] is also accepted |
+| GET /v1/albums/{id} | Album |
+| GET /v1/artists/{id} | ArtistDetails |
 | GET /v1/library | MusicLibrary |
 | GET /v1/playlists/{id} | Playlist |
 | POST /v1/playlists, body `{ "name": "…" }` | Playlist |

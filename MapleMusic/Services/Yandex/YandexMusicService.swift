@@ -85,9 +85,56 @@ actor YandexMusicService: MusicService {
         ])
     }
 
-    func search(query: String) async throws -> [Track] {
-        let result = try await request("search", query: ["text": query, "type": "track", "page": "0", "nocorrect": "false"])
-        return result["tracks"]["results"].array.compactMap { $0.track() }
+    func search(query: String) async throws -> MusicSearchResults {
+        let result = try await request("search", query: [
+            "text": query,
+            "type": "all",
+            "page": "0",
+            "nocorrect": "false",
+            "playlist-in-best": "true",
+        ])
+        return MusicSearchResults(
+            tracks: result["tracks"]["results"].array.compactMap { $0.track() },
+            albums: result["albums"]["results"].array.compactMap { $0.album() },
+            artists: result["artists"]["results"].array.compactMap { $0.artist() }
+        )
+    }
+
+    func album(id: String) async throws -> Album {
+        let albumID = try numericIdentifier(id)
+        let result = try await request("albums/\(albumID)/with-tracks")
+        guard let album = result.album() else { throw MusicServiceError.invalidResponse }
+        return album
+    }
+
+    func artist(id: String) async throws -> ArtistDetails {
+        let artistID = try numericIdentifier(id)
+        let brief = try await request("artists/\(artistID)/brief-info")
+        async let tracksLoad: YandexJSON? = try? request(
+            "artists/\(artistID)/tracks",
+            query: ["page": "0", "page-size": "50"]
+        )
+        async let albumsLoad: YandexJSON? = try? request(
+            "artists/\(artistID)/direct-albums",
+            query: ["sort-by": "year", "page": "0", "page-size": "50"]
+        )
+        let tracksResult = await tracksLoad ?? .null
+        let albumsResult = await albumsLoad ?? .null
+        let tracks = tracksResult["tracks"].array.compactMap { $0.track() }
+
+        var seenAlbumIDs = Set<String>()
+        let albumValues = albumsResult["albums"].array
+            + brief["albums"].array
+            + brief["alsoAlbums"].array
+        let albums = albumValues.compactMap { value -> Album? in
+            guard let album = value.album(), seenAlbumIDs.insert(album.id).inserted else { return nil }
+            return album
+        }
+        let artist = brief["artist"].artist()
+            ?? tracks.first?.artist
+            ?? albums.first?.artists.first
+        guard let artist else { throw MusicServiceError.invalidResponse }
+        return ArtistDetails(artist: artist, tracks: tracks, albums: albums)
     }
 
     func library() async throws -> MusicLibrary {
@@ -302,6 +349,10 @@ actor YandexMusicService: MusicService {
         guard let value = id.split(separator: ":").first, !value.isEmpty, value.allSatisfy(\.isNumber) else { throw MusicServiceError.invalidResponse }
         return String(value)
     }
+    private func numericIdentifier(_ id: String) throws -> String {
+        guard !id.isEmpty, id.allSatisfy(\.isNumber) else { throw MusicServiceError.invalidResponse }
+        return id
+    }
     private func changePlaylist(parts: [String], revision: String?, operations: [[String: Any]]) async throws {
         guard let revision else { throw MusicServiceError.invalidResponse }
         let data = try JSONSerialization.data(withJSONObject: operations, options: [.sortedKeys])
@@ -319,7 +370,7 @@ actor YandexMusicService: MusicService {
         request.timeoutInterval = 30
         request.setValue("OAuth \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("MapleMusic/0.7", forHTTPHeaderField: "User-Agent")
+        request.setValue("MapleMusic/0.8", forHTTPHeaderField: "User-Agent")
         if path == "get-file-info" {
             request.setValue("YandexMusicDesktopAppWindows/5.0.0", forHTTPHeaderField: "X-Yandex-Music-Client")
             request.setValue("new", forHTTPHeaderField: "X-Yandex-Music-Frontend")

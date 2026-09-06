@@ -27,8 +27,16 @@ actor BackendMusicService: MusicService {
 
     func profile() async throws -> UserProfile { try await request(path: "/v1/me") }
 
-    func search(query: String) async throws -> [Track] {
+    func search(query: String) async throws -> MusicSearchResults {
         try await request(path: "/v1/search", query: [URLQueryItem(name: "q", value: query)])
+    }
+
+    func album(id: String) async throws -> Album {
+        try await request(path: "/v1/albums/\(escaped(id))")
+    }
+
+    func artist(id: String) async throws -> ArtistDetails {
+        try await request(path: "/v1/artists/\(escaped(id))")
     }
 
     func library() async throws -> MusicLibrary {

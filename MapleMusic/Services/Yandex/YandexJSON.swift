@@ -35,18 +35,59 @@ enum YandexJSON: Decodable, Sendable {
         guard let id = self["id"].string, let title = self["title"].string else { return nil }
         let album = self["albums"].array.first ?? .null
         let artists = self["artists"].array
+        let parsedArtists = artists.compactMap { $0.artist() }
+        let artistName = parsedArtists.isEmpty
+            ? artists.compactMap { $0["name"].string }.joined(separator: ", ")
+            : parsedArtists.map(\.name).joined(separator: ", ")
         let albumID = album["id"].string
         let available = self["available"].bool ?? false
         return Track(
             id: albumID.map { "\(id):\($0)" } ?? id,
             title: title,
-            artist: Artist(id: artists.first?["id"].string ?? "unknown", name: artists.compactMap { $0["name"].string }.joined(separator: ", ")),
+            artist: Artist(
+                id: parsedArtists.first?.id ?? artists.first?["id"].string ?? "unknown",
+                name: artistName,
+                artwork: parsedArtists.first?.artwork
+            ),
+            albumID: albumID,
             albumTitle: album["title"].string ?? "",
             duration: (self["durationMs"].number ?? 0) / 1000,
             artwork: Artwork(url: Self.artworkURL(self["coverUri"].string ?? album["coverUri"].string)),
             isExplicit: self["contentWarning"].string == "explicit",
             downloadAllowed: available && (self["availableForPremiumUsers"].bool ?? available),
             availableQualities: [.automatic, .high, .lossless]
+        )
+    }
+
+    func artist() -> Artist? {
+        guard let id = self["id"].string, let name = self["name"].string else { return nil }
+        let cover = self["cover"]["uri"].string
+            ?? self["coverUri"].string
+            ?? self["ogImage"].string
+        let artworkURL = Self.artworkURL(cover)
+        return Artist(
+            id: id,
+            name: name,
+            artwork: artworkURL.map { Artwork(url: $0) }
+        )
+    }
+
+    func album(tracks suppliedTracks: [Track]? = nil) -> Album? {
+        guard let id = self["id"].string, let title = self["title"].string else { return nil }
+        let artists = self["artists"].array.compactMap { $0.artist() }
+        let tracks = suppliedTracks ?? self["volumes"].array.flatMap(\.array).compactMap { $0.track() }
+        let cover = self["coverUri"].string
+            ?? self["cover"]["uri"].string
+            ?? self["ogImage"].string
+        return Album(
+            id: id,
+            title: title,
+            artists: artists,
+            artwork: Artwork(url: Self.artworkURL(cover)),
+            year: self["year"].number.map(Int.init),
+            genre: self["genre"].string,
+            tracks: tracks,
+            trackCount: Int(self["trackCount"].number ?? Double(tracks.count))
         )
     }
 

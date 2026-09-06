@@ -9,19 +9,51 @@ struct SearchView: View {
 
     var body: some View {
         NavigationStack {
-            List(catalog.searchResults) { track in
-                TrackRow(
-                    track: track,
-                    isDownloaded: downloads.isDownloaded(track),
-                    isDownloading: downloads.activeTrackIDs.contains(track.id),
-                    play: { Task { await player.play(track, queue: catalog.searchResults) } },
-                    toggleDownload: {
-                        Task {
-                            if downloads.isDownloaded(track) { await downloads.remove(track) }
-                            else { await downloads.download(track, quality: player.preferredQuality) }
+            List {
+                if !catalog.searchResults.artists.isEmpty {
+                    Section("Исполнители") {
+                        ForEach(catalog.searchResults.artists) { artist in
+                            NavigationLink {
+                                ArtistDetailView(artist: artist)
+                            } label: {
+                                ArtistRow(artist: artist)
+                            }
                         }
                     }
-                )
+                }
+
+                if !catalog.searchResults.albums.isEmpty {
+                    Section("Альбомы") {
+                        ForEach(catalog.searchResults.albums) { album in
+                            NavigationLink {
+                                AlbumDetailView(album: album)
+                            } label: {
+                                AlbumRow(album: album)
+                            }
+                        }
+                    }
+                }
+
+                if !catalog.searchResults.tracks.isEmpty {
+                    Section("Треки") {
+                        ForEach(catalog.searchResults.tracks) { track in
+                            TrackRow(
+                                track: track,
+                                isDownloaded: downloads.isDownloaded(track),
+                                isDownloading: downloads.activeTrackIDs.contains(track.id),
+                                play: {
+                                    Task { await player.play(track, queue: catalog.searchResults.tracks) }
+                                },
+                                toggleDownload: {
+                                    Task {
+                                        if downloads.isDownloaded(track) { await downloads.remove(track) }
+                                        else { await downloads.download(track, quality: player.preferredQuality) }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
             }
             .listStyle(.plain)
             .navigationTitle("Поиск")

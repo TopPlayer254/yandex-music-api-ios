@@ -2,7 +2,9 @@ import Foundation
 
 protocol MusicService: Sendable {
     func home() async throws -> HomeFeed
-    func search(query: String) async throws -> [Track]
+    func search(query: String) async throws -> MusicSearchResults
+    func album(id: String) async throws -> Album
+    func artist(id: String) async throws -> ArtistDetails
     func library() async throws -> MusicLibrary
     func playlist(id: String) async throws -> Playlist
     func createPlaylist(name: String) async throws -> Playlist
@@ -15,7 +17,9 @@ protocol MusicService: Sendable {
 
 struct AnyMusicService: MusicService {
     private let _home: @Sendable () async throws -> HomeFeed
-    private let _search: @Sendable (String) async throws -> [Track]
+    private let _search: @Sendable (String) async throws -> MusicSearchResults
+    private let _album: @Sendable (String) async throws -> Album
+    private let _artist: @Sendable (String) async throws -> ArtistDetails
     private let _library: @Sendable () async throws -> MusicLibrary
     private let _playlist: @Sendable (String) async throws -> Playlist
     private let _createPlaylist: @Sendable (String) async throws -> Playlist
@@ -28,6 +32,8 @@ struct AnyMusicService: MusicService {
     init<Service: MusicService>(_ service: Service) {
         _home = service.home
         _search = service.search
+        _album = service.album
+        _artist = service.artist
         _library = service.library
         _playlist = service.playlist
         _createPlaylist = service.createPlaylist
@@ -39,7 +45,9 @@ struct AnyMusicService: MusicService {
     }
 
     func home() async throws -> HomeFeed { try await _home() }
-    func search(query: String) async throws -> [Track] { try await _search(query) }
+    func search(query: String) async throws -> MusicSearchResults { try await _search(query) }
+    func album(id: String) async throws -> Album { try await _album(id) }
+    func artist(id: String) async throws -> ArtistDetails { try await _artist(id) }
     func library() async throws -> MusicLibrary { try await _library() }
     func playlist(id: String) async throws -> Playlist { try await _playlist(id) }
     func createPlaylist(name: String) async throws -> Playlist { try await _createPlaylist(name) }

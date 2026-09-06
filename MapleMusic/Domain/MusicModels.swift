@@ -35,6 +35,13 @@ enum RepeatMode: String, Codable, CaseIterable, Sendable {
 struct Artist: Codable, Hashable, Identifiable, Sendable {
     let id: String
     let name: String
+    let artwork: Artwork?
+
+    init(id: String, name: String, artwork: Artwork? = nil) {
+        self.id = id
+        self.name = name
+        self.artwork = artwork
+    }
 }
 
 struct Artwork: Codable, Hashable, Sendable {
@@ -51,6 +58,7 @@ struct Track: Codable, Hashable, Identifiable, Sendable {
     let id: String
     let title: String
     let artist: Artist
+    let albumID: String?
     let albumTitle: String
     let duration: TimeInterval
     let artwork: Artwork
@@ -62,6 +70,7 @@ struct Track: Codable, Hashable, Identifiable, Sendable {
         id: String,
         title: String,
         artist: Artist,
+        albumID: String? = nil,
         albumTitle: String,
         duration: TimeInterval,
         artwork: Artwork = Artwork(),
@@ -72,12 +81,67 @@ struct Track: Codable, Hashable, Identifiable, Sendable {
         self.id = id
         self.title = title
         self.artist = artist
+        self.albumID = albumID
         self.albumTitle = albumTitle
         self.duration = duration
         self.artwork = artwork
         self.isExplicit = isExplicit
         self.downloadAllowed = downloadAllowed
         self.availableQualities = availableQualities
+    }
+}
+
+struct Album: Codable, Hashable, Identifiable, Sendable {
+    let id: String
+    let title: String
+    let artists: [Artist]
+    let artwork: Artwork
+    let year: Int?
+    let genre: String?
+    let tracks: [Track]
+    let trackCount: Int
+
+    var artistNames: String {
+        artists.map(\.name).joined(separator: ", ")
+    }
+}
+
+struct ArtistDetails: Codable, Hashable, Sendable {
+    let artist: Artist
+    let tracks: [Track]
+    let albums: [Album]
+}
+
+struct MusicSearchResults: Codable, Hashable, Sendable {
+    let tracks: [Track]
+    let albums: [Album]
+    let artists: [Artist]
+
+    init(tracks: [Track] = [], albums: [Album] = [], artists: [Artist] = []) {
+        self.tracks = tracks
+        self.albums = albums
+        self.artists = artists
+    }
+
+    var isEmpty: Bool {
+        tracks.isEmpty && albums.isEmpty && artists.isEmpty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case tracks, albums, artists
+    }
+
+    init(from decoder: Decoder) throws {
+        if let legacyTracks = try? decoder.singleValueContainer().decode([Track].self) {
+            self.init(tracks: legacyTracks)
+            return
+        }
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            tracks: try values.decodeIfPresent([Track].self, forKey: .tracks) ?? [],
+            albums: try values.decodeIfPresent([Album].self, forKey: .albums) ?? [],
+            artists: try values.decodeIfPresent([Artist].self, forKey: .artists) ?? []
+        )
     }
 }
 

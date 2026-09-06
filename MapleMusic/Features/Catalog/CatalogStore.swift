@@ -5,7 +5,7 @@ import Combine
 final class CatalogStore: ObservableObject {
     @Published private(set) var home: HomeFeed?
     @Published private(set) var library: MusicLibrary?
-    @Published private(set) var searchResults: [Track] = []
+    @Published private(set) var searchResults = MusicSearchResults()
     @Published private(set) var isLoading = false
     @Published private(set) var isSearching = false
     @Published private(set) var homeErrorMessage: String?
@@ -66,7 +66,7 @@ final class CatalogStore: ObservableObject {
         searchTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            searchResults = []
+            searchResults = MusicSearchResults()
             searchErrorMessage = nil
             isSearching = false
             return
@@ -84,7 +84,7 @@ final class CatalogStore: ObservableObject {
                 return
             } catch {
                 guard !Task.isCancelled, !Self.isCancellation(error) else { return }
-                searchResults = []
+                searchResults = MusicSearchResults()
                 searchErrorMessage = error.localizedDescription
             }
             isSearching = false
@@ -112,6 +112,12 @@ final class CatalogStore: ObservableObject {
     func loadPlaylist(_ id: String) async -> Playlist? {
         do { return try await service.playlist(id: id) }
         catch { errorMessage = error.localizedDescription; return nil }
+    }
+    func loadAlbum(_ id: String) async throws -> Album {
+        try await service.album(id: id)
+    }
+    func loadArtist(_ id: String) async throws -> ArtistDetails {
+        try await service.artist(id: id)
     }
     func add(_ track: Track, to playlist: Playlist) async {
         do { try await service.add(trackID: track.id, toPlaylistID: playlist.id); await refreshLibrary() }

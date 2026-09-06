@@ -20,8 +20,9 @@ struct RootView: View {
                 LegacyTabs(selection: $selection)
             }
         }
-        .fullScreenCover(isPresented: $player.isShowingNowPlaying) {
+        .sheet(isPresented: $player.isShowingNowPlaying) {
             NowPlayingView()
+                .presentationCornerRadius(34)
         }
         .alert("Музыкальный сервис", isPresented: Binding(
             get: { catalog.errorMessage != nil || downloads.errorMessage != nil },

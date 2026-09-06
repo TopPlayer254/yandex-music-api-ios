@@ -1,7 +1,11 @@
 import Foundation
 
 actor DemoMusicService: MusicService {
-    static let artist = Artist(id: "maple-sessions", name: "Maple Sessions")
+    static let artist = Artist(
+        id: "maple-sessions",
+        name: "Maple Sessions",
+        artwork: Artwork(colors: ["FF375F", "5E5CE6"])
+    )
 
     private let tracks: [Track]
     private var playlists: [Playlist]
@@ -14,6 +18,7 @@ actor DemoMusicService: MusicService {
                 id: "northern-lights",
                 title: "Northern Lights",
                 artist: artist,
+                albumID: "afterglow",
                 albumTitle: "Afterglow",
                 duration: 18,
                 artwork: Artwork(colors: ["FF2D55", "7928CA"]),
@@ -23,6 +28,7 @@ actor DemoMusicService: MusicService {
                 id: "glass-river",
                 title: "Glass River",
                 artist: artist,
+                albumID: "afterglow",
                 albumTitle: "Afterglow",
                 duration: 18,
                 artwork: Artwork(colors: ["0A84FF", "64D2FF"]),
@@ -32,6 +38,7 @@ actor DemoMusicService: MusicService {
                 id: "midnight-maple",
                 title: "Midnight Maple",
                 artist: artist,
+                albumID: "city-rooms",
                 albumTitle: "City Rooms",
                 duration: 18,
                 artwork: Artwork(colors: ["BF5AF2", "FF9F0A"]),
@@ -41,6 +48,7 @@ actor DemoMusicService: MusicService {
                 id: "soft-static",
                 title: "Soft Static",
                 artist: artist,
+                albumID: "city-rooms",
                 albumTitle: "City Rooms",
                 duration: 18,
                 artwork: Artwork(colors: ["30D158", "004E64"]),
@@ -84,14 +92,36 @@ actor DemoMusicService: MusicService {
         )
     }
 
-    func search(query: String) async throws -> [Track] {
+    func search(query: String) async throws -> MusicSearchResults {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalized.isEmpty else { return [] }
-        return tracks.filter {
+        guard !normalized.isEmpty else { return MusicSearchResults() }
+        let matchingTracks = tracks.filter {
             $0.title.lowercased().contains(normalized)
                 || $0.artist.name.lowercased().contains(normalized)
                 || $0.albumTitle.lowercased().contains(normalized)
         }
+        let matchingAlbums = albums.filter {
+            $0.title.lowercased().contains(normalized)
+                || $0.artistNames.lowercased().contains(normalized)
+        }
+        let matchingArtists = Self.artist.name.lowercased().contains(normalized) ? [Self.artist] : []
+        return MusicSearchResults(
+            tracks: matchingTracks,
+            albums: matchingAlbums,
+            artists: matchingArtists
+        )
+    }
+
+    func album(id: String) async throws -> Album {
+        guard let album = albums.first(where: { $0.id == id }) else {
+            throw MusicServiceError.http(404)
+        }
+        return album
+    }
+
+    func artist(id: String) async throws -> ArtistDetails {
+        guard id == Self.artist.id else { throw MusicServiceError.http(404) }
+        return ArtistDetails(artist: Self.artist, tracks: tracks, albums: albums)
     }
 
     func library() async throws -> MusicLibrary {
@@ -200,5 +230,26 @@ actor DemoMusicService: MusicService {
         case 12 ..< 18: "Добрый день"
         default: "Добрый вечер"
         }
+    }
+
+    private var albums: [Album] {
+        [
+            makeAlbum(id: "afterglow", title: "Afterglow", year: 2026),
+            makeAlbum(id: "city-rooms", title: "City Rooms", year: 2026),
+        ]
+    }
+
+    private func makeAlbum(id: String, title: String, year: Int) -> Album {
+        let albumTracks = tracks.filter { $0.albumID == id }
+        return Album(
+            id: id,
+            title: title,
+            artists: [Self.artist],
+            artwork: albumTracks.first?.artwork ?? Artwork(),
+            year: year,
+            genre: "Электроника",
+            tracks: albumTracks,
+            trackCount: albumTracks.count
+        )
     }
 }

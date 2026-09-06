@@ -43,9 +43,32 @@ final class YandexProtocolTests: XCTestCase {
         XCTAssertEqual(track?.id, "123:42")
         XCTAssertEqual(track?.title, "Тестовая песня")
         XCTAssertEqual(track?.artist.name, "Артист")
+        XCTAssertEqual(track?.albumID, "42")
         XCTAssertEqual(track?.duration, 123.456)
         XCTAssertEqual(track?.artwork.url?.scheme, "https")
         XCTAssertTrue(track?.downloadAllowed == true)
+    }
+
+    func testSearchArtistAndAlbumMetadataParsing() throws {
+        let artistJSON = #"{"id":7,"name":"Артист","cover":{"uri":"avatars.yandex.net/artist/%%"}}"#
+        let artist = try JSONDecoder().decode(YandexJSON.self, from: Data(artistJSON.utf8)).artist()
+        XCTAssertEqual(artist?.id, "7")
+        XCTAssertEqual(artist?.artwork?.url?.absoluteString, "https://avatars.yandex.net/artist/600x600")
+
+        let albumJSON = #"{"id":"42","title":"Альбом","year":2026,"genre":"rock","trackCount":12,"artists":[{"id":7,"name":"Артист"}],"coverUri":"avatars.yandex.net/album/%%"}"#
+        let album = try JSONDecoder().decode(YandexJSON.self, from: Data(albumJSON.utf8)).album()
+        XCTAssertEqual(album?.id, "42")
+        XCTAssertEqual(album?.artistNames, "Артист")
+        XCTAssertEqual(album?.year, 2026)
+        XCTAssertEqual(album?.trackCount, 12)
+    }
+
+    func testSearchResultsDecodeLegacyTrackArray() throws {
+        let json = #"[{"id":"1","title":"Legacy","artist":{"id":"2","name":"Artist"},"albumTitle":"Album","duration":120,"artwork":{"colors":[]},"isExplicit":false,"downloadAllowed":true,"availableQualities":["high"]}]"#
+        let results = try JSONDecoder().decode(MusicSearchResults.self, from: Data(json.utf8))
+        XCTAssertEqual(results.tracks.first?.title, "Legacy")
+        XCTAssertTrue(results.albums.isEmpty)
+        XCTAssertTrue(results.artists.isEmpty)
     }
 
     func testUnavailableTrackCannotBeDownloaded() throws {

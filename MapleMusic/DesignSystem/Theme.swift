@@ -153,10 +153,11 @@ struct ArtworkView: View {
     @State private var hasFinishedLoading = false
 
     var body: some View {
+        let displayedImage = image ?? artwork.url.flatMap { ArtworkImageCache.shared.cachedImage(for: $0) }
         ZStack {
             Color(uiColor: .secondarySystemBackground)
-            if let image {
-                Image(uiImage: image)
+            if let displayedImage {
+                Image(uiImage: displayedImage)
                     .resizable()
                     .scaledToFill()
             } else if artwork.url != nil, !hasFinishedLoading {
@@ -168,9 +169,14 @@ struct ArtworkView: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .accessibilityHidden(true)
         .task(id: artwork.url) {
-            image = nil
             hasFinishedLoading = artwork.url == nil
             guard let url = artwork.url else { return }
+            if let cached = ArtworkImageCache.shared.cachedImage(for: url) {
+                image = cached
+                hasFinishedLoading = true
+                return
+            }
+            image = nil
             image = await ArtworkImageCache.shared.image(for: url)
             hasFinishedLoading = true
         }
