@@ -12,7 +12,6 @@ final class YandexDeviceLogin: ObservableObject {
     // can change. An account token can also be entered directly in Settings.
     private let clientID = "23cabbbdc6cd418abb4b39c32c41195d"
     private let clientSecret = "53bc75238f0c4d08a118e51fe9203300"
-    private let deviceIDKey = "yandex-oauth-device-id"
 
     func start(receive: @escaping @MainActor (String) async -> Void) {
         cancel()
@@ -22,7 +21,8 @@ final class YandexDeviceLogin: ObservableObject {
             defer { isRunning = false }
             do {
                 let code = try await post("device/code", fields: ["client_id": clientID,
-                    "device_id": stableDeviceID(), "device_name": "Maple Music"])
+                    // Match the device flow used by the first working build.
+                    "device_id": UUID().uuidString, "device_name": "Maple Music"])
                 guard let deviceCode = code["device_code"].string, let userCode = code["user_code"].string,
                       let raw = code["verification_url"].string ?? code["verification_uri"].string,
                       let url = URL(string: raw), url.scheme == "https",
@@ -62,12 +62,6 @@ final class YandexDeviceLogin: ObservableObject {
         isRunning = false
         userCode = nil
         verificationURL = nil
-    }
-    private func stableDeviceID() -> String {
-        if let saved = UserDefaults.standard.string(forKey: deviceIDKey), !saved.isEmpty { return saved }
-        let value = UUID().uuidString.lowercased()
-        UserDefaults.standard.set(value, forKey: deviceIDKey)
-        return value
     }
     private func post(_ path: String, fields: [String: String]) async throws -> YandexJSON {
         var request = URLRequest(url: URL(string: "https://oauth.yandex.ru/\(path)")!)

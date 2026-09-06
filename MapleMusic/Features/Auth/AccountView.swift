@@ -5,11 +5,24 @@ struct AccountView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var downloads: DownloadsStore
+    @EnvironmentObject private var player: PlayerStore
     @EnvironmentObject private var settings: ProviderSettings
 
     var body: some View {
         NavigationStack {
             List {
+                if settings.configuration.kind == .demo {
+                    Section {
+                        Button {
+                            switchToYandex()
+                        } label: {
+                            Label("Перейти к Яндекс Музыке", systemImage: "person.crop.circle.badge.plus")
+                        }
+                    } footer: {
+                        Text("Демо-режим можно отключить в любой момент. После переключения откроется обычный вход в аккаунт.")
+                    }
+                }
+
                 Section {
                     NavigationLink {
                         AppearanceSettingsView()
@@ -84,6 +97,11 @@ struct AccountView: View {
         case .restoring, .signingIn: "Проверка входа…"
         case .signedOut: settings.configuration.kind == .demo ? "Не требуется" : "Не выполнен"
         }
+    }
+
+    private func switchToYandex() {
+        player.stop()
+        try? settings.apply(ProviderConfiguration())
     }
 }
 
@@ -169,6 +187,10 @@ private struct AccountSettingsView: View {
                     Text("Демо-режим не требует учётной записи и использует только встроенные аудиофайлы.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    Button("Перейти к Яндекс Музыке") {
+                        player.stop()
+                        try? settings.apply(ProviderConfiguration())
+                    }
                 }
             } else if case let .signedIn(profile) = auth.state {
                 Section {
@@ -270,7 +292,7 @@ private struct AudioProviderSettingsView: View {
         Form {
             Section {
                 Picker("Качество", selection: $player.preferredQuality) {
-                    ForEach(AudioQuality.allCases) { quality in
+                    ForEach(AudioQuality.selectableCases) { quality in
                         Text(quality.title).tag(quality)
                     }
                 }
@@ -304,7 +326,7 @@ private struct AudioProviderSettingsView: View {
             } header: {
                 Text("Музыкальный сервис")
             } footer: {
-                Text("Автоматический режим сначала использует совместимый MP3-поток, а затем File info. Lossless запрашивается через File info, если он доступен треку и аккаунту.")
+                Text("Веб-стандарт запрашивает обычный поток как веб-плеер и не требует Плюса. MP3 используется как резерв. Lossless запрашивается отдельно и требует соответствующего доступа аккаунта.")
             }
 
             Section {

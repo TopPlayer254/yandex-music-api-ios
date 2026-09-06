@@ -79,7 +79,7 @@ struct NowPlayingView: View {
 
             Menu {
                 Picker("Качество", selection: $player.preferredQuality) {
-                    ForEach(AudioQuality.allCases) { quality in
+                    ForEach(AudioQuality.selectableCases) { quality in
                         Text(quality.title).tag(quality)
                     }
                 }

@@ -8,6 +8,17 @@ final class YandexProtocolTests: XCTestCase {
         XCTAssertEqual(YandexMusicService.sign(message), "bkw/VEyHuTLJ8+avInQ6SKNxxFRoGDpXob2ah2xts68=")
     }
 
+    func testStandardWebPlaybackSignatureMatchesKnownVector() {
+        let message = "172000000012345nqmp3aac-mp4aache-aac-mp4he-aacencraw"
+        XCTAssertEqual(YandexMusicService.sign(message), "olSKho8dbrLiG4Pc+Tzq2UFZnck5P8WDM4vi1SH7VSQ=")
+    }
+
+    func testQualityPickerSeparatesStandardFromLossless() {
+        XCTAssertEqual(AudioQuality.selectableCases, [.high, .lossless])
+        XCTAssertEqual(AudioQuality.high.title, "Стандартное")
+        XCTAssertEqual(AudioQuality.lossless.title, "Lossless (Яндекс Плюс)")
+    }
+
     func testYandexAACUsesM4AExtensionAndPassesContainerValidation() throws {
         let asset = PlaybackAsset(
             url: URL(fileURLWithPath: "/tmp/source"),

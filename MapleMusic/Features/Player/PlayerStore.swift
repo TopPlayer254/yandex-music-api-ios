@@ -41,14 +41,14 @@ final class PlayerStore: ObservableObject {
     init(service: AnyMusicService, offlineStore: OfflineStore) {
         self.service = service
         self.offlineStore = offlineStore
-        preferredQuality = AudioQuality(rawValue: UserDefaults.standard.string(forKey: "preferred-quality") ?? "") ?? .automatic
+        let savedQuality = AudioQuality(rawValue: UserDefaults.standard.string(forKey: "preferred-quality") ?? "")
+        preferredQuality = savedQuality == .lossless ? .lossless : .high
         if let savedVolume = UserDefaults.standard.object(forKey: "player-volume") as? Double {
             volume = savedVolume
         } else {
             volume = 1
         }
         player.volume = Float(volume)
-        configureAudioSession()
         configureObservers()
         configureRemoteCommands()
     }
@@ -136,6 +136,7 @@ final class PlayerStore: ObservableObject {
                 }
             }
             player.replaceCurrentItem(with: item)
+            prepareAudioSession()
             player.play()
             isPlaying = true
             updateNowPlayingInfo()
@@ -253,13 +254,10 @@ final class PlayerStore: ObservableObject {
         }
     }
 
-    private func configureAudioSession() {
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
-        } catch {
-            errorMessage = "Не удалось подготовить аудиосессию: \(error.localizedDescription)"
-        }
+    private func prepareAudioSession() {
+        // AVPlayer activates the session itself. Setting only the playback
+        // category at the moment playback starts avoids a launch-time -50.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
     }
 
     private func failCurrentPlayback(_ detail: String?) {

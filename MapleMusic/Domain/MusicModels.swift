@@ -7,19 +7,21 @@ enum AudioQuality: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var id: Self { self }
 
+    // Automatic remains decodable for existing manifests and gateway responses,
+    // but the UI presents the two choices that have distinct user meaning.
+    static var selectableCases: [AudioQuality] { [.high, .lossless] }
+
     var title: String {
         switch self {
-        case .automatic: "Автоматически"
-        case .high: "Высокое качество"
-        case .lossless: "Lossless"
+        case .automatic, .high: "Стандартное"
+        case .lossless: "Lossless (Яндекс Плюс)"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .automatic: "Лучший совместимый вариант"
-        case .high: "До 320 кбит/с"
-        case .lossless: "ALAC или FLAC, если доступно"
+        case .automatic, .high: "Обычное качество веб-плеера, доступное без Плюса"
+        case .lossless: "FLAC, если качество доступно аккаунту"
         }
     }
 }

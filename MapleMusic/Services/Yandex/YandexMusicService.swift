@@ -7,9 +7,9 @@ actor YandexMusicService: MusicService {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .automatic: "Автоматически · рекомендуемый режим"
-            case .modern: "File info · Lossless / encraw"
-            case .legacy: "Download info · MP3"
+            case .automatic: "Веб-стандарт · MP3 резерв"
+            case .modern: "File info · стандарт / Lossless"
+            case .legacy: "Legacy · MP3"
             }
         }
     }
@@ -19,7 +19,8 @@ actor YandexMusicService: MusicService {
     private let session: URLSession
     private let streamAPI: StreamAPI
     private static let signatureKey = "kzqU4XhfCaY6B6JTHODeq5"
-    private static let supportedCodecs = ["flac", "aac", "he-aac", "mp3", "flac-mp4", "aac-mp4", "he-aac-mp4"]
+    private static let losslessCodecs = ["flac", "flac-mp4", "mp3", "aac-mp4", "aac", "he-aac-mp4", "he-aac"]
+    private static let standardCodecs = ["mp3", "aac-mp4", "aac", "he-aac-mp4", "he-aac"]
 
     init(baseURL: URL = URL(string: "https://api.music.yandex.net")!, streamAPI: StreamAPI = .automatic,
          session: URLSession = .shared, token: @escaping @Sendable () async -> String?) {
@@ -27,23 +28,26 @@ actor YandexMusicService: MusicService {
     }
 
     func profile() async throws -> UserProfile {
-        // Desktop/web clients use account/about; older API clients used
-        // account/status. Accept either without consulting a Plus flag.
-        if let result = try? await request("account/about"),
-           let id = result["uid"].string, id != "0" {
-            return UserProfile(
-                id: id,
-                displayName: result["displayName"].string ?? result["fullName"].string
-                    ?? result["login"].string ?? "Пользователь Яндекса",
-                avatarURL: nil
-            )
-        }
-        let result = try await request("account/status")
-        let account = result["account"]
-        guard let id = account["uid"].string, id != "0" else { throw MusicServiceError.unauthorized }
+        // Keep the account/status path that the first build used, with the
+        // newer desktop endpoint as a fallback. Neither path gates on Plus.
+        do {
+            let result = try await request("account/status")
+            let account = result["account"]
+            if let id = account["uid"].string, id != "0" {
+                return UserProfile(
+                    id: id,
+                    displayName: account["displayName"].string ?? account["login"].string
+                        ?? "Пользователь Яндекса",
+                    avatarURL: nil
+                )
+            }
+        } catch { }
+        let result = try await request("account/about")
+        guard let id = result["uid"].string, id != "0" else { throw MusicServiceError.unauthorized }
         return UserProfile(
             id: id,
-            displayName: account["displayName"].string ?? account["login"].string ?? "Пользователь Яндекса",
+            displayName: result["displayName"].string ?? result["fullName"].string
+                ?? result["login"].string ?? "Пользователь Яндекса",
             avatarURL: nil
         )
     }
@@ -139,13 +143,13 @@ actor YandexMusicService: MusicService {
                 return try await modernAsset(id: id, track: track, quality: quality)
             }
             do {
-                // The browser-compatible MP3 response is directly playable by
-                // AVPlayer. Prefer it so encraw never needs an iOS-side remux.
-                return try await legacyAsset(id: id, track: track, quality: quality)
+                // Match the authorized web/desktop standard-quality request.
+                // Exact track-id verification avoids accepting an ad placeholder.
+                return try await modernAsset(id: id, track: track, quality: .high)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                return try await modernAsset(id: id, track: track, quality: quality)
+                return try await legacyAsset(id: id, track: track, quality: .high)
             }
         }
     }
@@ -192,9 +196,10 @@ actor YandexMusicService: MusicService {
     private func modernAsset(id: String, track: Track, quality: AudioQuality) async throws -> PlaybackAsset {
         let timestamp = String(Int(Date().timeIntervalSince1970))
         let requested = quality == .lossless ? "lossless" : "nq"
-        let codecs = Self.supportedCodecs.joined(separator: ",")
+        let requestedCodecs = quality == .lossless ? Self.losslessCodecs : Self.standardCodecs
+        let codecs = requestedCodecs.joined(separator: ",")
         let transport = "encraw"
-        let signature = Self.sign(timestamp + id + requested + Self.supportedCodecs.joined() + transport)
+        let signature = Self.sign(timestamp + id + requested + requestedCodecs.joined() + transport)
         let sign = signature.last == "=" ? String(signature.dropLast()) : signature
 
         for attempt in 0 ..< 10 {
@@ -220,7 +225,7 @@ actor YandexMusicService: MusicService {
             guard info["preview"].bool != true else { throw MusicServiceError.forbidden }
             let isLossless = codec == "flac" || codec == "flac-mp4" || codec == "alac"
             if quality == .lossless && !isLossless {
-                throw MusicServiceError.message("Lossless недоступен для этого трека или аккаунта. Выберите высокое качество.")
+                throw MusicServiceError.message("Lossless недоступен для этого трека или аккаунта. Выберите стандартное качество.")
             }
             let key = info["key"].string
             if info["transport"].string == "encraw", key == nil { throw MusicServiceError.invalidResponse }
@@ -289,7 +294,7 @@ actor YandexMusicService: MusicService {
         request.timeoutInterval = 30
         request.setValue("OAuth \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("MapleMusic/0.4", forHTTPHeaderField: "User-Agent")
+        request.setValue("MapleMusic/0.5", forHTTPHeaderField: "User-Agent")
         request.setValue("YandexMusicDesktopAppWindows/5.0.0", forHTTPHeaderField: "X-Yandex-Music-Client")
         request.setValue("new", forHTTPHeaderField: "X-Yandex-Music-Frontend")
         request.setValue("1", forHTTPHeaderField: "X-Yandex-Music-Without-Invocation-Info")
