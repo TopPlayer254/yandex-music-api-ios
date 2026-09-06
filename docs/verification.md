@@ -17,7 +17,7 @@
 - `xcodebuild build-for-testing` compiled the app and XCTest target for generic iOS Simulator.
 - `xcodebuild archive` produced an unsigned arm64 device archive.
 - The archive was packaged as `dist/MapleMusic-unsigned.ipa`; local SHA-256:
-  `d920faa5e7e64df0f2e656d7e223b2b6ba713ef9cef27411d71059a0df856f79`.
+  `2a1eaf73f151cfdee86b2853980f722c7d7d8e823f86f472dc279c5f004c483e`.
 - The IPA structure contains `Payload/MapleMusic.app/Info.plist` and no
   `embedded.mobileprovision` or `_CodeSignature` entry.
 
