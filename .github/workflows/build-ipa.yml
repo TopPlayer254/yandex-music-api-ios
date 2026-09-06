@@ -58,13 +58,13 @@ jobs:
           xcodegen generate --spec project.yml
           xcodebuild -list -project MapleMusic.xcodeproj
 
-      - name: Compile app and tests
+      - name: Run unit tests
         run: >-
-          xcodebuild build-for-testing
+          xcodebuild test
           -project MapleMusic.xcodeproj
           -scheme MapleMusic
           -configuration Debug
-          -destination 'generic/platform=iOS Simulator'
+          -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=26.2'
           -resultBundlePath "$RUNNER_TEMP/MapleMusic-tests.xcresult"
           CODE_SIGNING_ALLOWED=NO
           YANDEX_CLIENT_ID="$YANDEX_CLIENT_ID"
