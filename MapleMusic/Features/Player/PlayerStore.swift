@@ -15,6 +15,13 @@ final class PlayerStore: ObservableObject {
     @Published var preferredQuality: AudioQuality {
         didSet { UserDefaults.standard.set(preferredQuality.rawValue, forKey: "preferred-quality") }
     }
+    @Published var volume: Double {
+        didSet {
+            let clamped = min(max(volume, 0), 1)
+            player.volume = Float(clamped)
+            UserDefaults.standard.set(clamped, forKey: "player-volume")
+        }
+    }
     @Published var repeatMode: RepeatMode = .off
     @Published var isShuffling = false
     @Published var isShowingNowPlaying = false
@@ -35,6 +42,12 @@ final class PlayerStore: ObservableObject {
         self.service = service
         self.offlineStore = offlineStore
         preferredQuality = AudioQuality(rawValue: UserDefaults.standard.string(forKey: "preferred-quality") ?? "") ?? .automatic
+        if let savedVolume = UserDefaults.standard.object(forKey: "player-volume") as? Double {
+            volume = savedVolume
+        } else {
+            volume = 1
+        }
+        player.volume = Float(volume)
         configureAudioSession()
         configureObservers()
         configureRemoteCommands()
@@ -62,24 +75,9 @@ final class PlayerStore: ObservableObject {
     func play(_ track: Track, queue proposedQueue: [Track]? = nil) async {
         let identifier = UUID()
         requestID = identifier
-        player.pause()
-        player.replaceCurrentItem(with: nil)
-        if let playbackFile { try? FileManager.default.removeItem(at: playbackFile) }
-        playbackFile = nil
-        resolvedAsset = nil
-        isPlaying = false
         isBuffering = true
         errorMessage = nil
-        if let proposedQueue, !proposedQueue.isEmpty {
-            queue = proposedQueue
-        } else if !queue.contains(where: { $0.id == track.id }) {
-            queue = [track]
-        }
-        currentTrack = track
-        duration = track.duration
-        currentTime = 0
-        lyrics = nil
-        updateNowPlayingInfo()
+        var preparedFile: URL?
         do {
             let asset: PlaybackAsset
             if let offline = await offlineStore.localAsset(for: track) {
@@ -93,18 +91,50 @@ final class PlayerStore: ObservableObject {
                 let file = FileManager.default.temporaryDirectory.appendingPathComponent("maple-\(identifier).\(MediaFileLoader.fileExtension(for: asset))")
                 try await MediaFileLoader.download(asset, to: file)
                 guard requestID == identifier else { try? FileManager.default.removeItem(at: file); return }
-                playbackFile = file
+                preparedFile = file
+                playbackURL = file
+            } else if asset.url.isFileURL,
+                      asset.url.pathExtension.lowercased() != MediaFileLoader.fileExtension(for: asset) {
+                let file = FileManager.default.temporaryDirectory.appendingPathComponent("maple-\(identifier).\(MediaFileLoader.fileExtension(for: asset))")
+                try await MediaFileLoader.download(asset, to: file)
+                guard requestID == identifier else { try? FileManager.default.removeItem(at: file); return }
+                preparedFile = file
                 playbackURL = file
             }
+
+            let mediaAsset = AVURLAsset(url: playbackURL)
+            let isPlayable = try await mediaAsset.load(.isPlayable)
+            guard isPlayable else {
+                throw MusicServiceError.message("Формат этого трека не поддерживается проигрывателем.")
+            }
+            guard requestID == identifier else {
+                if let preparedFile { try? FileManager.default.removeItem(at: preparedFile) }
+                return
+            }
+
+            player.pause()
+            player.replaceCurrentItem(with: nil)
+            if let playbackFile { try? FileManager.default.removeItem(at: playbackFile) }
+            playbackFile = preparedFile
             resolvedAsset = asset
-            let item = AVPlayerItem(url: playbackURL)
+            if let proposedQueue, !proposedQueue.isEmpty {
+                queue = proposedQueue
+            } else if !queue.contains(where: { $0.id == track.id }) {
+                queue = [track]
+            }
+            currentTrack = track
+            duration = track.duration
+            currentTime = 0
+            lyrics = nil
+
+            let item = AVPlayerItem(asset: mediaAsset)
             itemStatus = item.observe(\.status, options: [.new]) { [weak self] observed, _ in
                 let status = observed.status
                 let message = observed.error?.localizedDescription
                 Task { @MainActor in
                     guard let self, self.requestID == identifier else { return }
                     self.isBuffering = status == .unknown
-                    if status == .failed { self.pause(); self.errorMessage = message ?? "Playback failed." }
+                    if status == .failed { self.failCurrentPlayback(message) }
                 }
             }
             player.replaceCurrentItem(with: item)
@@ -120,9 +150,8 @@ final class PlayerStore: ObservableObject {
             }
         } catch {
             guard requestID == identifier else { return }
-            isPlaying = false
+            if let preparedFile { try? FileManager.default.removeItem(at: preparedFile) }
             isBuffering = false
-            resolvedAsset = nil
             errorMessage = error.localizedDescription
             updateNowPlayingInfo()
         }
@@ -232,8 +261,30 @@ final class PlayerStore: ObservableObject {
             try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
             try session.setActive(true)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "Не удалось подготовить аудиосессию: \(error.localizedDescription)"
         }
+    }
+
+    private func failCurrentPlayback(_ detail: String?) {
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        itemStatus = nil
+        isPlaying = false
+        isBuffering = false
+        resolvedAsset = nil
+        currentTrack = nil
+        lyrics = nil
+        duration = 0
+        currentTime = 0
+        isShowingNowPlaying = false
+        if let playbackFile { try? FileManager.default.removeItem(at: playbackFile) }
+        playbackFile = nil
+        if let detail, !detail.isEmpty {
+            errorMessage = "Не удалось воспроизвести трек. \(detail)"
+        } else {
+            errorMessage = "Не удалось воспроизвести трек. Попробуйте другой режим API в настройках."
+        }
+        updateNowPlayingInfo()
     }
 
     private func configureObservers() {

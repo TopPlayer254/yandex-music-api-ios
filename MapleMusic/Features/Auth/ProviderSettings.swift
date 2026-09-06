@@ -6,14 +6,18 @@ enum ProviderKind: String, CaseIterable, Codable, Identifiable {
     case yandex, gateway, demo
     var id: String { rawValue }
     var title: String {
-        switch self { case .yandex: "Yandex Music (Unofficial)"; case .gateway: "Custom API Gateway"; case .demo: "Local Demo" }
+        switch self {
+        case .yandex: "Яндекс Музыка (неофициальный API)"
+        case .gateway: "Свой API-шлюз"
+        case .demo: "Локальная демоверсия"
+        }
     }
 }
 
 struct ProviderConfiguration: Codable, Equatable {
     var kind: ProviderKind = .yandex
     var endpoint = "https://api.music.yandex.net"
-    var streamAPI: YandexMusicService.StreamAPI = .modern
+    var streamAPI: YandexMusicService.StreamAPI = .automatic
 
     var credentialID: String {
         let digest = SHA256.hash(data: Data("\(kind.rawValue):\(endpoint)".utf8))
@@ -22,7 +26,7 @@ struct ProviderConfiguration: Codable, Equatable {
     func validatedURL() throws -> URL {
         guard let url = URL(string: endpoint), url.scheme == "https", let host = url.host, !host.isEmpty,
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
-            throw MusicServiceError.message("Enter an HTTPS API address without credentials or query parameters.")
+            throw MusicServiceError.message("Введите HTTPS-адрес API без логина, пароля и параметров запроса.")
         }
         return url
     }

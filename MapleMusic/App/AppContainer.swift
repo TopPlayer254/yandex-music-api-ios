@@ -37,7 +37,7 @@ final class AppContainer: ObservableObject {
             }
         case .demo:
             service = AnyMusicService(DemoMusicService())
-            profile = { _ in UserProfile(id: "demo", displayName: "Local Demo", avatarURL: nil) }
+            profile = { _ in UserProfile(id: "demo", displayName: "Локальная демоверсия", avatarURL: nil) }
         }
         auth = AuthStore(configuration: configuration, vault: vault, profileLoader: profile)
         offlineStore = OfflineStore()

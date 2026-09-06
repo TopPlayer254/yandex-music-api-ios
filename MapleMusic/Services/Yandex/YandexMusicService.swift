@@ -3,18 +3,25 @@ import Foundation
 
 actor YandexMusicService: MusicService {
     enum StreamAPI: String, Codable, CaseIterable, Identifiable {
-        case modern, legacy
+        case automatic, modern, legacy
         var id: String { rawValue }
-        var title: String { self == .modern ? "File info · Lossless / encraw" : "Download info · MP3 / AAC" }
+        var title: String {
+            switch self {
+            case .automatic: "Автоматически · рекомендуемый режим"
+            case .modern: "File info · Lossless / encraw"
+            case .legacy: "Download info · MP3"
+            }
+        }
     }
 
     private let baseURL: URL
     private let token: @Sendable () async -> String?
     private let session: URLSession
     private let streamAPI: StreamAPI
-    private static let signatureKey = "p93jhgh689SBReK6ghtw62"
+    private static let signatureKey = "kzqU4XhfCaY6B6JTHODeq5"
+    private static let supportedCodecs = ["flac", "aac", "he-aac", "mp3", "flac-mp4", "aac-mp4", "he-aac-mp4"]
 
-    init(baseURL: URL = URL(string: "https://api.music.yandex.net")!, streamAPI: StreamAPI = .modern,
+    init(baseURL: URL = URL(string: "https://api.music.yandex.net")!, streamAPI: StreamAPI = .automatic,
          session: URLSession = .shared, token: @escaping @Sendable () async -> String?) {
         self.baseURL = baseURL; self.streamAPI = streamAPI; self.session = session; self.token = token
     }
@@ -29,8 +36,8 @@ actor YandexMusicService: MusicService {
     func home() async throws -> HomeFeed {
         let result = try await request("rotor/station/user:onyourwave/tracks", query: ["settings2": "true"])
         let tracks = result["sequence"].array.compactMap { $0["track"].track() }
-        return HomeFeed(greeting: "Listen Now", featured: Array(tracks.prefix(5)), shelves: [
-            MusicShelf(id: "my-wave", title: "My Wave", subtitle: "For you", layout: .list, tracks: tracks)
+        return HomeFeed(greeting: "Слушать сейчас", featured: Array(tracks.prefix(5)), shelves: [
+            MusicShelf(id: "my-wave", title: "Моя волна", subtitle: "Для вас", layout: .list, tracks: tracks)
         ])
     }
 
@@ -83,7 +90,7 @@ actor YandexMusicService: MusicService {
         let tracks = try await fetchTracks([trackID])
         guard let track = tracks.first else { throw MusicServiceError.http(404) }
         let trackParts = track.id.split(separator: ":").map(String.init)
-        guard trackParts.count == 2 else { throw MusicServiceError.message("This track has no album identifier.") }
+        guard trackParts.count == 2 else { throw MusicServiceError.message("У трека нет идентификатора альбома.") }
         let operation: [[String: Any]] = [["op": "insert", "at": Int(playlist["trackCount"].number ?? 0),
                                           "tracks": [["id": trackParts[0], "albumId": trackParts[1]]]]]
         try await changePlaylist(parts: parts, revision: playlist["revision"].string, operations: operation)
@@ -107,28 +114,21 @@ actor YandexMusicService: MusicService {
 
     func playbackAsset(for track: Track, quality: AudioQuality) async throws -> PlaybackAsset {
         let id = try trackIdentifier(track.id)
-        if streamAPI == .legacy { return try await legacyAsset(id: id, track: track, quality: quality) }
-        let timestamp = String(Int(Date().timeIntervalSince1970))
-        let requested = quality == .lossless ? "lossless" : "nq"
-        let codecs = "flac,aac,he-aac,mp3"
-        let transport = "encraw"
-        let sign = Self.sign(timestamp + id + requested + codecs.replacingOccurrences(of: ",", with: "") + transport)
-            .replacingOccurrences(of: "=", with: "")
-        let result = try await request("get-file-info", query: ["ts": timestamp, "trackId": id, "quality": requested,
-            "codecs": codecs, "transports": transport, "sign": sign])
-        let info = result["downloadInfo"]
-        guard let address = info["url"].string ?? info["urls"].array.first?.string,
-              let url = URL(string: address), url.scheme == "https", let codec = info["codec"].string else {
-            throw MusicServiceError.invalidResponse
+        switch streamAPI {
+        case .modern:
+            return try await modernAsset(id: id, track: track, quality: quality)
+        case .legacy:
+            return try await legacyAsset(id: id, track: track, quality: quality)
+        case .automatic:
+            do {
+                return try await modernAsset(id: id, track: track, quality: quality)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                guard quality != .lossless else { throw error }
+                return try await legacyAsset(id: id, track: track, quality: quality)
+            }
         }
-        guard info["preview"].bool != true else { throw MusicServiceError.forbidden }
-        let isLossless = codec == "flac" || codec == "flac-mp4" || codec == "alac"
-        if quality == .lossless && !isLossless { throw MusicServiceError.message("Lossless is unavailable for this track or account. Select High Quality to continue.") }
-        let key = info["key"].string
-        if info["transport"].string == "encraw", key == nil { throw MusicServiceError.invalidResponse }
-        return PlaybackAsset(url: url, quality: isLossless ? .lossless : .high, codec: codec,
-            bitDepth: info["bitDepth"].number.map(Int.init), sampleRate: info["sampleRate"].number.map(Int.init),
-            expiresAt: nil, allowsOfflineDownload: track.downloadAllowed, decryptionKey: key, transport: info["transport"].string)
     }
 
     func lyrics(for track: Track) async throws -> Lyrics? {
@@ -146,7 +146,7 @@ actor YandexMusicService: MusicService {
     }
 
     private func legacyAsset(id: String, track: Track, quality: AudioQuality) async throws -> PlaybackAsset {
-        if quality == .lossless { throw MusicServiceError.message("Lossless requires the File info API. Change the API in Settings.") }
+        if quality == .lossless { throw MusicServiceError.message("Для Lossless нужен режим File info. Измените API воспроизведения в настройках.") }
         let result = try await request("tracks/\(id)/download-info")
         guard let info = result.array.filter({ $0["preview"].bool == false && $0["codec"].string == "mp3" })
             .max(by: { ($0["bitrateInKbps"].number ?? 0) < ($1["bitrateInKbps"].number ?? 0) }),
@@ -168,6 +168,56 @@ actor YandexMusicService: MusicService {
         }
         return PlaybackAsset(url: url, quality: .high, codec: "mp3", bitDepth: nil, sampleRate: nil, expiresAt: nil,
                              allowsOfflineDownload: track.downloadAllowed, transport: info["container"].string)
+    }
+
+    private func modernAsset(id: String, track: Track, quality: AudioQuality) async throws -> PlaybackAsset {
+        let timestamp = String(Int(Date().timeIntervalSince1970))
+        let requested = quality == .lossless ? "lossless" : "nq"
+        let codecs = Self.supportedCodecs.joined(separator: ",")
+        let transport = "encraw"
+        let signature = Self.sign(timestamp + id + requested + Self.supportedCodecs.joined() + transport)
+        let sign = signature.last == "=" ? String(signature.dropLast()) : signature
+
+        for attempt in 0 ..< 5 {
+            try Task.checkCancellation()
+            let result = try await request("get-file-info", query: [
+                "ts": timestamp,
+                "trackId": id,
+                "quality": requested,
+                "codecs": codecs,
+                "transports": transport,
+                "sign": sign,
+            ])
+            let info = result["downloadInfo"]
+            if let returnedID = info["trackId"].string,
+               returnedID.split(separator: ":").first.map(String.init) != id {
+                if attempt < 4 { try await Task.sleep(for: .milliseconds(150)) }
+                continue
+            }
+            guard let address = info["url"].string ?? info["urls"].array.first?.string,
+                  let url = URL(string: address), url.scheme == "https", let codec = info["codec"].string else {
+                throw MusicServiceError.invalidResponse
+            }
+            guard info["preview"].bool != true else { throw MusicServiceError.forbidden }
+            let isLossless = codec == "flac" || codec == "flac-mp4" || codec == "alac"
+            if quality == .lossless && !isLossless {
+                throw MusicServiceError.message("Lossless недоступен для этого трека или аккаунта. Выберите высокое качество.")
+            }
+            let key = info["key"].string
+            if info["transport"].string == "encraw", key == nil { throw MusicServiceError.invalidResponse }
+            return PlaybackAsset(
+                url: url,
+                quality: isLossless ? .lossless : .high,
+                codec: codec,
+                bitDepth: info["bitDepth"].number.map(Int.init),
+                sampleRate: info["sampleRate"].number.map(Int.init),
+                expiresAt: nil,
+                allowsOfflineDownload: track.downloadAllowed,
+                decryptionKey: key,
+                transport: info["transport"].string
+            )
+        }
+        throw MusicServiceError.invalidResponse
     }
 
     private func fetchTracks(_ ids: [String]) async throws -> [Track] {
@@ -220,7 +270,10 @@ actor YandexMusicService: MusicService {
         request.timeoutInterval = 30
         request.setValue("OAuth \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("MapleMusic/0.2", forHTTPHeaderField: "User-Agent")
+        request.setValue("MapleMusic/0.3", forHTTPHeaderField: "User-Agent")
+        request.setValue("YandexMusicDesktopAppWindows/5.0.0", forHTTPHeaderField: "X-Yandex-Music-Client")
+        request.setValue("new", forHTTPHeaderField: "X-Yandex-Music-Frontend")
+        request.setValue("1", forHTTPHeaderField: "X-Yandex-Music-Without-Invocation-Info")
         if let form {
             request.httpMethod = "POST"
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -241,7 +294,7 @@ actor YandexMusicService: MusicService {
         case 200..<300: return
         case 401: throw MusicServiceError.unauthorized
         case 403: throw MusicServiceError.forbidden
-        case 451: throw MusicServiceError.message("The provider is unavailable in this region (HTTP 451).")
+        case 451: throw MusicServiceError.message("Сервис недоступен в текущем регионе (HTTP 451).")
         default: throw MusicServiceError.http(http.statusCode)
         }
     }

@@ -24,8 +24,8 @@ struct SearchView: View {
                 )
             }
             .listStyle(.plain)
-            .navigationTitle("Search")
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Artists, songs, albums")
+            .navigationTitle("Поиск")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Артисты, треки и альбомы")
             .onChange(of: query) { _, newValue in catalog.scheduleSearch(newValue) }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -35,13 +35,38 @@ struct SearchView: View {
             .sheet(isPresented: $showsAccount) { AccountView() }
             .overlay {
                 if catalog.isSearching {
-                    ProgressView()
+                    SearchLoadingPlaceholder()
                 } else if query.isEmpty {
-                    ContentUnavailableView("Find Your Music", systemImage: "magnifyingglass", description: Text("Search by song, artist, or album."))
+                    ContentUnavailableView("Найдите свою музыку", systemImage: "magnifyingglass", description: Text("Ищите по треку, артисту или альбому."))
                 } else if catalog.searchResults.isEmpty {
                     ContentUnavailableView.search(text: query)
                 }
             }
         }
+    }
+}
+
+private struct SearchLoadingPlaceholder: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(0 ..< 5, id: \.self) { _ in
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(.quaternary)
+                        .frame(width: 52, height: 52)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Название трека")
+                        Text("Исполнитель · Альбом").font(.subheadline)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 7)
+            }
+        }
+        .redacted(reason: .placeholder)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Color(uiColor: .systemBackground))
+        .accessibilityLabel("Поиск музыки")
     }
 }

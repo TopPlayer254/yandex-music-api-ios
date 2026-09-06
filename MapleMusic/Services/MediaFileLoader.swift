@@ -5,7 +5,8 @@ enum MediaFileLoader {
     static func fileExtension(for asset: PlaybackAsset) -> String {
         switch asset.codec.lowercased() {
         case "flac": return "flac"
-        case "alac", "aac", "he-aac", "flac-mp4", "aac-mp4", "he-aac-mp4": return "m4a"
+        case "aac", "he-aac": return "aac"
+        case "alac", "flac-mp4", "aac-mp4", "he-aac-mp4": return "m4a"
         case "mp3": return "mp3"
         default: return "wav"
         }
@@ -15,7 +16,7 @@ enum MediaFileLoader {
     // same account's get-file-info response; no key extraction from another app.
     static func download(_ asset: PlaybackAsset, to destination: URL) async throws {
         guard asset.transport != "hls", asset.url.pathExtension != "m3u8" else {
-            throw MusicServiceError.message("Offline HLS is not supported by this API mode. Select File info in Settings.")
+            throw MusicServiceError.message("Офлайн-загрузка HLS недоступна в этом режиме API. Выберите File info в настройках.")
         }
         let source: URL
         let temporary: Bool
@@ -34,10 +35,42 @@ enum MediaFileLoader {
         do {
             if let key = asset.decryptionKey { try decrypt(source: source, destination: destination, hexKey: key) }
             else { try FileManager.default.copyItem(at: source, to: destination) }
+            try validatePlayableFile(at: destination, asset: asset)
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
         } catch {
             try? FileManager.default.removeItem(at: destination)
             throw error
+        }
+    }
+
+    static func validatePlayableFile(at url: URL, asset: PlaybackAsset) throws {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        guard let data = try handle.read(upToCount: 32), data.count >= 4 else {
+            throw MusicServiceError.invalidResponse
+        }
+        let bytes = [UInt8](data)
+        let codec = asset.codec.lowercased()
+        let isISOBaseMedia = data.count >= 8 && String(decoding: bytes[4 ..< 8], as: UTF8.self) == "ftyp"
+        let isADTS = bytes[0] == 0xFF && (bytes[1] & 0xF6) == 0xF0
+        let isMP3 = String(decoding: bytes.prefix(3), as: UTF8.self) == "ID3"
+            || (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0)
+        let isFLAC = String(decoding: bytes.prefix(4), as: UTF8.self) == "fLaC"
+        let isWAV = data.count >= 12
+            && String(decoding: bytes.prefix(4), as: UTF8.self) == "RIFF"
+            && String(decoding: bytes[8 ..< 12], as: UTF8.self) == "WAVE"
+
+        let valid: Bool
+        switch codec {
+        case "flac": valid = isFLAC
+        case "aac", "he-aac": valid = isADTS || isISOBaseMedia
+        case "mp3": valid = isMP3
+        case "alac", "flac-mp4", "aac-mp4", "he-aac-mp4": valid = isISOBaseMedia
+        case "linear pcm", "wav": valid = isWAV
+        default: valid = !data.isEmpty
+        }
+        guard valid else {
+            throw MusicServiceError.message("Сервис вернул аудиофайл в несовместимом формате. Попробуйте автоматический API в настройках.")
         }
     }
 

@@ -14,22 +14,22 @@ struct LibraryView: View {
                     List {
                         Section {
                             NavigationLink {
-                                TrackListView(title: "Recently Added", tracks: library.recentlyAdded)
+                                TrackListView(title: "Недавно добавленные", tracks: library.recentlyAdded)
                             } label: {
-                                Label("Recently Added", systemImage: "clock")
+                                Label("Недавно добавленные", systemImage: "clock")
                             }
                             NavigationLink {
-                                TrackListView(title: "Favorites", tracks: library.liked)
+                                TrackListView(title: "Любимые", tracks: library.liked)
                             } label: {
-                                Label("Favorites", systemImage: "heart.fill")
+                                Label("Любимые", systemImage: "heart.fill")
                             }
                             NavigationLink {
                                 DownloadsView(allTracks: allTracks(in: library))
                             } label: {
-                                Label("Downloaded", systemImage: "arrow.down.circle.fill")
+                                Label("Загруженные", systemImage: "arrow.down.circle.fill")
                             }
                         }
-                        Section("Playlists") {
+                        Section("Плейлисты") {
                             ForEach(library.playlists) { playlist in
                                 NavigationLink {
                                     PlaylistView(playlist: playlist)
@@ -39,7 +39,7 @@ struct LibraryView: View {
                                             .frame(width: 50, height: 50)
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(playlist.name)
-                                            Text("\(playlist.totalTrackCount ?? playlist.tracks.count) songs")
+                                            Text((playlist.totalTrackCount ?? playlist.tracks.count).russianTrackCount)
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
@@ -50,16 +50,16 @@ struct LibraryView: View {
                     }
                     .listStyle(.insetGrouped)
                 } else if catalog.isLoading {
-                    ProgressView("Loading library…")
+                    LibraryLoadingPlaceholder()
                 } else {
-                    ContentUnavailableView("Library Is Unavailable", systemImage: "square.stack")
+                    ContentUnavailableView("Медиатека недоступна", systemImage: "square.stack")
                 }
             }
-            .navigationTitle("Library")
+            .navigationTitle("Медиатека")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showsNewPlaylist = true } label: { Image(systemName: "plus") }
-                        .accessibilityLabel("New playlist")
+                        .accessibilityLabel("Новый плейлист")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     AccountToolbarButton(isPresented: $showsAccount)
@@ -67,10 +67,10 @@ struct LibraryView: View {
             }
             .refreshable { await catalog.refreshLibrary() }
             .sheet(isPresented: $showsAccount) { AccountView() }
-            .alert("New Playlist", isPresented: $showsNewPlaylist) {
-                TextField("Playlist name", text: $playlistName)
-                Button("Cancel", role: .cancel) { playlistName = "" }
-                Button("Create") {
+            .alert("Новый плейлист", isPresented: $showsNewPlaylist) {
+                TextField("Название плейлиста", text: $playlistName)
+                Button("Отмена", role: .cancel) { playlistName = "" }
+                Button("Создать") {
                     let name = playlistName.trimmingCharacters(in: .whitespacesAndNewlines)
                     playlistName = ""
                     guard !name.isEmpty else { return }
@@ -95,6 +95,7 @@ struct LibraryView: View {
 }
 
 struct TrackListView: View {
+    @EnvironmentObject private var appearance: AppearanceSettings
     @EnvironmentObject private var player: PlayerStore
     @EnvironmentObject private var downloads: DownloadsStore
     let title: String
@@ -104,10 +105,13 @@ struct TrackListView: View {
         List {
             if !tracks.isEmpty {
                 Button { Task { await player.play(tracks[0], queue: tracks) } } label: {
-                    Label("Play", systemImage: "play.fill")
+                    Label("Воспроизвести", systemImage: "play.fill")
                         .frame(maxWidth: .infinity)
                         .font(.headline)
+                        .foregroundStyle(.white)
                 }
+                .tint(appearance.tint)
+                .adaptiveProminentButtonStyle()
             }
             ForEach(tracks) { track in
                 TrackRow(
@@ -132,13 +136,14 @@ struct TrackListView: View {
         .navigationBarTitleDisplayMode(.large)
         .overlay {
             if tracks.isEmpty {
-                ContentUnavailableView("No Songs", systemImage: "music.note")
+                ContentUnavailableView("Нет треков", systemImage: "music.note")
             }
         }
     }
 }
 
 struct PlaylistView: View {
+    @EnvironmentObject private var appearance: AppearanceSettings
     @EnvironmentObject private var catalog: CatalogStore
     @EnvironmentObject private var player: PlayerStore
     @EnvironmentObject private var downloads: DownloadsStore
@@ -163,20 +168,22 @@ struct PlaylistView: View {
                     }
                     HStack(spacing: 12) {
                         Button { if let first = playlist.tracks.first { Task { await player.play(first, queue: playlist.tracks) } } } label: {
-                            Label("Play", systemImage: "play.fill")
+                            Label("Воспроизвести", systemImage: "play.fill")
                                 .frame(maxWidth: .infinity)
+                                .foregroundStyle(.white)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .tint(appearance.tint)
+                        .adaptiveProminentButtonStyle()
                         Button {
                             if let random = playlist.tracks.randomElement() {
                                 player.isShuffling = true
                                 Task { await player.play(random, queue: playlist.tracks) }
                             }
                         } label: {
-                            Label("Shuffle", systemImage: "shuffle")
+                            Label("Перемешать", systemImage: "shuffle")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.bordered)
+                        .adaptiveSecondaryButtonStyle()
                     }
                 }
                 .listRowBackground(Color.clear)
@@ -198,7 +205,7 @@ struct PlaylistView: View {
                 )
                 .swipeActions {
                     if playlist.isEditable {
-                        Button("Remove", role: .destructive) {
+                        Button("Удалить", role: .destructive) {
                             Task {
                                 await catalog.remove(track, from: playlist)
                                 loaded = await catalog.loadPlaylist(playlist.id)
@@ -225,7 +232,28 @@ struct DownloadsView: View {
     }
 
     var body: some View {
-        TrackListView(title: "Downloaded", tracks: downloadedTracks)
+        TrackListView(title: "Загруженные", tracks: downloadedTracks)
             .task { await downloads.refresh() }
+    }
+}
+
+private struct LibraryLoadingPlaceholder: View {
+    var body: some View {
+        List {
+            ForEach(0 ..< 5, id: \.self) { _ in
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(.quaternary)
+                        .frame(width: 50, height: 50)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Название плейлиста").font(.body)
+                        Text("12 треков").font(.caption)
+                    }
+                }
+            }
+            .redacted(reason: .placeholder)
+        }
+        .listStyle(.insetGrouped)
+        .accessibilityLabel("Загрузка медиатеки")
     }
 }

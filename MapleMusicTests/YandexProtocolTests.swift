@@ -3,6 +3,29 @@ import XCTest
 @testable import MapleMusic
 
 final class YandexProtocolTests: XCTestCase {
+    func testModernPlaybackSignatureMatchesKnownVector() {
+        let message = "172000000012345nqflacaache-aacmp3flac-mp4aac-mp4he-aac-mp4encraw"
+        XCTAssertEqual(YandexMusicService.sign(message), "bkw/VEyHuTLJ8+avInQ6SKNxxFRoGDpXob2ah2xts68=")
+    }
+
+    func testRawAACUsesAACExtensionAndPassesHeaderValidation() throws {
+        let asset = PlaybackAsset(
+            url: URL(fileURLWithPath: "/tmp/source"),
+            quality: .high,
+            codec: "aac",
+            bitDepth: nil,
+            sampleRate: nil,
+            expiresAt: nil,
+            allowsOfflineDownload: true
+        )
+        XCTAssertEqual(MediaFileLoader.fileExtension(for: asset), "aac")
+
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data([0xFF, 0xF1, 0x50, 0x80, 0x00, 0x1F]).write(to: file)
+        XCTAssertNoThrow(try MediaFileLoader.validatePlayableFile(at: file, asset: asset))
+    }
+
     func testMixedIdentifiersAndCyrillicMetadata() throws {
         let json = #"{"id":123,"title":"Тестовая песня","durationMs":123456,"available":true,"availableForPremiumUsers":true,"artists":[{"id":"7","name":"Артист"}],"albums":[{"id":42,"title":"Альбом"}],"coverUri":"avatars.yandex.net/get-music-content/%%"}"#
         let track = try JSONDecoder().decode(YandexJSON.self, from: Data(json.utf8)).track()

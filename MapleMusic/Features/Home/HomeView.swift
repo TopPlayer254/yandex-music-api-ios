@@ -20,25 +20,25 @@ struct HomeView: View {
                         .padding(.bottom, 20)
                     }
                 } else if catalog.isLoading {
-                    ProgressView("Loading your music…")
+                    HomeLoadingPlaceholder()
                 } else if auth.state == .signedOut {
                     ContentUnavailableView {
-                        Label("Your Music Starts Here", systemImage: "music.note.house")
+                        Label("Ваша музыка начинается здесь", systemImage: "music.note.house")
                     } description: {
-                        Text("Connect your account or choose Local Demo in Settings.")
+                        Text("Подключите аккаунт или выберите локальную демоверсию в настройках.")
                     } actions: {
-                        Button("Open Settings") { showsAccount = true }
+                        Button("Открыть настройки") { showsAccount = true }
                             .buttonStyle(.borderedProminent)
                     }
                 } else {
                     ContentUnavailableView(
-                        "Home Is Unavailable",
+                        "Главная недоступна",
                         systemImage: "music.note.house",
-                        description: Text(catalog.errorMessage ?? "Try again in a moment.")
+                        description: Text(catalog.errorMessage ?? "Повторите попытку чуть позже.")
                     )
                 }
             }
-            .navigationTitle(catalog.home?.greeting ?? "Home")
+            .navigationTitle(catalog.home?.greeting ?? "Главная")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     AccountToolbarButton(isPresented: $showsAccount)
@@ -51,7 +51,7 @@ struct HomeView: View {
 
     private func featured(_ tracks: [Track]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Listen Now")
+            Text("Слушать сейчас")
                 .font(.title2.bold())
                 .padding(.horizontal)
             ScrollView(.horizontal, showsIndicators: false) {
@@ -116,6 +116,33 @@ struct HomeView: View {
                 .padding(.horizontal)
             }
         }
+    }
+}
+
+private struct HomeLoadingPlaceholder: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Слушать сейчас").font(.title2.bold())
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.quaternary)
+                    .frame(height: 260)
+                ForEach(0 ..< 4, id: \.self) { _ in
+                    HStack(spacing: 12) {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.quaternary)
+                            .frame(width: 52, height: 52)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Название трека")
+                            Text("Исполнитель").font(.subheadline)
+                        }
+                    }
+                }
+            }
+            .padding()
+            .redacted(reason: .placeholder)
+        }
+        .accessibilityLabel("Загрузка главной")
     }
 }
 

@@ -46,7 +46,7 @@ final class AuthStore: ObservableObject {
     // A Yandex ID login:info token alone does not confer Music API access.
     func importToken(_ raw: String) async -> Bool {
         let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else { errorMessage = "Enter an access token."; return false }
+        guard !token.isEmpty else { errorMessage = "Введите токен доступа."; return false }
         state = .signingIn
         do {
             let profile = try await profileLoader(token)

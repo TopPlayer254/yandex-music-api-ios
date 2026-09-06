@@ -26,7 +26,7 @@ final class YandexDeviceLogin: ObservableObject {
                       let raw = code["verification_url"].string ?? code["verification_uri"].string,
                       let url = URL(string: raw), url.scheme == "https",
                       ["oauth.yandex.ru", "oauth.yandex.com", "ya.ru", "passport.yandex.ru"].contains(url.host ?? "") else {
-                    throw MusicServiceError.message("Device login is unavailable. Use an account token in Settings.")
+                    throw MusicServiceError.message("Вход по коду сейчас недоступен. Используйте токен доступа в настройках.")
                 }
                 self.userCode = userCode
                 self.verificationURL = url
@@ -44,10 +44,10 @@ final class YandexDeviceLogin: ObservableObject {
                     switch result["error"].string {
                     case "authorization_pending": continue
                     case "slow_down": interval += 5
-                    default: throw MusicServiceError.message("Login was declined or expired. Request a new code.")
+                    default: throw MusicServiceError.message("Вход отклонён или время ожидания истекло. Запросите новый код.")
                     }
                 }
-                throw MusicServiceError.message("The login code expired.")
+                throw MusicServiceError.message("Срок действия кода входа истёк.")
             } catch is CancellationError { }
             catch { self.error = error.localizedDescription }
         }
@@ -70,7 +70,7 @@ final class YandexDeviceLogin: ObservableObject {
         }.joined(separator: "&").utf8)
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 || http.statusCode == 400 else {
-            throw MusicServiceError.message("The authorization server is unavailable.")
+            throw MusicServiceError.message("Сервер авторизации недоступен.")
         }
         return try JSONDecoder().decode(YandexJSON.self, from: data)
     }

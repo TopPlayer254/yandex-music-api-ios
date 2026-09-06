@@ -1,9 +1,53 @@
+import Combine
 import SwiftUI
 
-extension Color {
-    static let mapleAccent = Color(red: 0.98, green: 0.12, blue: 0.29)
-    static let mapleSecondary = Color(red: 0.58, green: 0.22, blue: 0.92)
+enum AccentColorChoice: String, CaseIterable, Identifiable {
+    case musicRed
+    case orange
+    case blue
+    case violet
+    case green
+    case graphite
 
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .musicRed: "Музыка"
+        case .orange: "Оранжевый"
+        case .blue: "Синий"
+        case .violet: "Фиолетовый"
+        case .green: "Зелёный"
+        case .graphite: "Графитовый"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .musicRed: Color(red: 0.94, green: 0.18, blue: 0.29)
+        case .orange: .orange
+        case .blue: .blue
+        case .violet: .purple
+        case .green: .green
+        case .graphite: Color(uiColor: .systemGray)
+        }
+    }
+}
+
+@MainActor
+final class AppearanceSettings: ObservableObject {
+    @Published var accent: AccentColorChoice {
+        didSet { UserDefaults.standard.set(accent.rawValue, forKey: "accent-color") }
+    }
+
+    init() {
+        accent = AccentColorChoice(rawValue: UserDefaults.standard.string(forKey: "accent-color") ?? "") ?? .musicRed
+    }
+
+    var tint: Color { accent.color }
+}
+
+extension Color {
     init(hex: String) {
         let cleaned = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var value: UInt64 = 0
@@ -23,7 +67,7 @@ extension Color {
                 opacity: Double(value & 0xFF) / 255
             )
         default:
-            self = .mapleAccent
+            self = Color(uiColor: .secondarySystemBackground)
         }
     }
 }
@@ -36,17 +80,81 @@ extension TimeInterval {
     }
 }
 
+extension Int {
+    var russianTrackCount: String {
+        let mod100 = self % 100
+        let mod10 = self % 10
+        let noun: String
+        if (11 ... 14).contains(mod100) {
+            noun = "треков"
+        } else if mod10 == 1 {
+            noun = "трек"
+        } else if (2 ... 4).contains(mod10) {
+            noun = "трека"
+        } else {
+            noun = "треков"
+        }
+        return "\(self) \(noun)"
+    }
+}
+
+private struct AdaptiveGlassModifier<GlassShape: Shape>: ViewModifier {
+    let shape: GlassShape
+    let interactive: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            if interactive {
+                content.glassEffect(.regular.interactive(), in: shape)
+            } else {
+                content.glassEffect(.regular, in: shape)
+            }
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+                .overlay(shape.stroke(.white.opacity(0.14), lineWidth: 0.5))
+        }
+    }
+}
+
+extension View {
+    func adaptiveGlass<GlassShape: Shape>(in shape: GlassShape, interactive: Bool = false) -> some View {
+        modifier(AdaptiveGlassModifier(shape: shape, interactive: interactive))
+    }
+
+    @ViewBuilder
+    func adaptiveProminentButtonStyle() -> some View {
+        if #available(iOS 26.0, *) {
+            buttonStyle(.glassProminent)
+        } else {
+            buttonStyle(.borderedProminent)
+        }
+    }
+
+    @ViewBuilder
+    func adaptiveSecondaryButtonStyle() -> some View {
+        if #available(iOS 26.0, *) {
+            buttonStyle(.glass)
+        } else {
+            buttonStyle(.bordered)
+        }
+    }
+}
+
 struct ArtworkView: View {
     let artwork: Artwork
     var cornerRadius: CGFloat = 12
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            Color(uiColor: .secondarySystemBackground)
             if let url = artwork.url {
                 AsyncImage(url: url) { phase in
                     if case let .success(image) = phase {
                         image.resizable().scaledToFill()
+                    } else if case .empty = phase {
+                        ProgressView().controlSize(.small)
                     } else {
                         placeholder
                     }
@@ -58,24 +166,20 @@ struct ArtworkView: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 0.5)
+                .strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
         }
         .accessibilityHidden(true)
     }
 
-    private var colors: [Color] {
-        let values = artwork.colors.map(Color.init(hex:))
-        return values.isEmpty ? [.mapleAccent, .mapleSecondary] : values
-    }
-
     private var placeholder: some View {
         Image(systemName: "waveform")
-            .font(.system(size: 36, weight: .medium))
-            .foregroundStyle(.white.opacity(0.9))
+            .font(.system(size: 30, weight: .medium))
+            .foregroundStyle(.secondary)
     }
 }
 
 struct TrackRow: View {
+    @EnvironmentObject private var appearance: AppearanceSettings
     let track: Track
     let isDownloaded: Bool
     let isDownloading: Bool
@@ -91,7 +195,7 @@ struct TrackRow: View {
                         Image(systemName: "play.fill")
                             .font(.caption.bold())
                             .foregroundStyle(.white)
-                            .shadow(radius: 4)
+                            .shadow(color: .black.opacity(0.6), radius: 4)
                     }
             }
             .buttonStyle(.plain)
@@ -116,28 +220,31 @@ struct TrackRow: View {
                 Button(action: toggleDownload) {
                     Image(systemName: isDownloaded ? "arrow.down.circle.fill" : "arrow.down.circle")
                         .font(.title3)
-                        .foregroundStyle(isDownloaded ? Color.mapleAccent : .secondary)
+                        .foregroundStyle(isDownloaded ? appearance.tint : Color.secondary)
                 }
                 .buttonStyle(.plain)
                 .disabled(!track.downloadAllowed)
-                .accessibilityLabel(isDownloaded ? "Remove download" : "Download")
+                .accessibilityLabel(isDownloaded ? "Удалить загрузку" : "Загрузить")
             }
         }
         .contentShape(Rectangle())
         .contextMenu { TrackActions(track: track) }
         .accessibilityElement(children: .combine)
-        .accessibilityAction(named: "Play", play)
+        .accessibilityAction(named: "Воспроизвести", play)
     }
 }
 
 struct TrackActions: View {
     @EnvironmentObject private var catalog: CatalogStore
     let track: Track
+
     var body: some View {
         Button {
             Task { await catalog.toggleFavorite(track) }
-        } label: { Label(catalog.isFavorite(track) ? "Remove Favorite" : "Add Favorite", systemImage: "heart") }
-        Menu("Add to Playlist") {
+        } label: {
+            Label(catalog.isFavorite(track) ? "Убрать из любимого" : "Добавить в любимое", systemImage: "heart")
+        }
+        Menu("Добавить в плейлист") {
             ForEach((catalog.library?.playlists ?? []).filter(\.isEditable)) { playlist in
                 Button(playlist.name) { Task { await catalog.add(track, to: playlist) } }
             }
@@ -167,6 +274,6 @@ struct AccountToolbarButton: View {
                     .font(.title2)
             }
         }
-        .accessibilityLabel("Account")
+        .accessibilityLabel("Учётная запись")
     }
 }

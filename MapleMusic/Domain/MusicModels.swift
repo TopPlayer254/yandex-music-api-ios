@@ -9,17 +9,17 @@ enum AudioQuality: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .automatic: "Automatic"
-        case .high: "High Quality"
+        case .automatic: "Автоматически"
+        case .high: "Высокое качество"
         case .lossless: "Lossless"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .automatic: "Adapts to your connection"
-        case .high: "Up to 320 kbps"
-        case .lossless: "ALAC or FLAC when available"
+        case .automatic: "Лучший совместимый вариант"
+        case .high: "До 320 кбит/с"
+        case .lossless: "ALAC или FLAC, если доступно"
         }
     }
 }
@@ -39,7 +39,7 @@ struct Artwork: Codable, Hashable, Sendable {
     let url: URL?
     let colors: [String]
 
-    init(url: URL? = nil, colors: [String] = ["FF375F", "8E44EC"]) {
+    init(url: URL? = nil, colors: [String] = []) {
         self.url = url
         self.colors = colors
     }
@@ -161,12 +161,12 @@ enum MusicServiceError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: "A licensed music backend has not been configured."
-        case .unauthorized: "Sign in to continue."
-        case .forbidden: "This account is not entitled to this media."
-        case .invalidResponse: "The music service returned an invalid response."
-        case let .http(status): "The music service returned HTTP \(status)."
-        case .offlineUnavailable: "This track is not licensed for offline playback."
+        case .notConfigured: "Музыкальный сервис не настроен."
+        case .unauthorized: "Войдите в аккаунт, чтобы продолжить."
+        case .forbidden: "Аккаунту недоступно воспроизведение этого трека."
+        case .invalidResponse: "Музыкальный сервис вернул некорректный ответ."
+        case let .http(status): "Музыкальный сервис вернул ошибку HTTP \(status)."
+        case .offlineUnavailable: "Этот трек недоступен для офлайн-воспроизведения."
         case let .message(message): message
         }
     }

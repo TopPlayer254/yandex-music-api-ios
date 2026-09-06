@@ -16,16 +16,16 @@ enum AuthError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: "Add your registered Yandex OAuth Client ID in Config/Local.xcconfig."
-        case .invalidAuthorizationURL: "Could not create the authorization URL."
-        case .canceled: "Sign in was canceled."
-        case .invalidCallback: "Yandex returned an invalid authorization callback."
-        case .stateMismatch: "The authorization response could not be verified."
-        case let .tokenExchangeFailed(code): "Token exchange failed with HTTP \(code)."
-        case .invalidTokenResponse: "Yandex returned an invalid token response."
-        case let .profileFailed(code): "Profile request failed with HTTP \(code)."
-        case let .keychain(status): "Keychain error \(status)."
-        case let .randomGenerationFailed(status): "Secure random generator error \(status)."
+        case .notConfigured: "Добавьте зарегистрированный Client ID Яндекса в Config/Local.xcconfig."
+        case .invalidAuthorizationURL: "Не удалось создать адрес авторизации."
+        case .canceled: "Вход отменён."
+        case .invalidCallback: "Яндекс вернул некорректный ответ авторизации."
+        case .stateMismatch: "Не удалось проверить ответ авторизации."
+        case let .tokenExchangeFailed(code): "Не удалось получить токен: HTTP \(code)."
+        case .invalidTokenResponse: "Яндекс вернул некорректный токен."
+        case let .profileFailed(code): "Не удалось загрузить профиль: HTTP \(code)."
+        case let .keychain(status): "Ошибка Связки ключей: \(status)."
+        case let .randomGenerationFailed(status): "Ошибка генератора случайных чисел: \(status)."
         }
     }
 }
@@ -110,7 +110,7 @@ final class YandexOAuthClient: NSObject, ASWebAuthenticationPresentationContextP
         }
         return UserProfile(
             id: profile.id,
-            displayName: profile.displayName ?? profile.realName ?? profile.login ?? "Yandex user",
+            displayName: profile.displayName ?? profile.realName ?? profile.login ?? "Пользователь Яндекса",
             avatarURL: avatarURL
         )
     }

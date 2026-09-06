@@ -52,8 +52,8 @@ actor DemoMusicService: MusicService {
         playlists = [
             Playlist(
                 id: "demo-favorites",
-                name: "Maple Essentials",
-                description: "A small offline-ready demo playlist.",
+                name: "Главное от Maple",
+                description: "Небольшой демоплейлист, доступный офлайн.",
                 artwork: Artwork(colors: ["FF375F", "5E5CE6"]),
                 tracks: demoTracks,
                 isEditable: true
@@ -68,14 +68,14 @@ actor DemoMusicService: MusicService {
             shelves: [
                 MusicShelf(
                     id: "made-for-you",
-                    title: "Made for You",
-                    subtitle: "A telemetry-free local demo",
+                    title: "Для вас",
+                    subtitle: "Локальная демоверсия без телеметрии",
                     layout: .cards,
                     tracks: tracks
                 ),
                 MusicShelf(
                     id: "recently-played",
-                    title: "Recently Played",
+                    title: "Недавно прослушано",
                     subtitle: nil,
                     layout: .list,
                     tracks: Array(tracks.reversed())
@@ -196,9 +196,9 @@ actor DemoMusicService: MusicService {
 
     private static var greeting: String {
         switch Calendar.current.component(.hour, from: Date()) {
-        case 5 ..< 12: "Good Morning"
-        case 12 ..< 18: "Good Afternoon"
-        default: "Good Evening"
+        case 5 ..< 12: "Доброе утро"
+        case 12 ..< 18: "Добрый день"
+        default: "Добрый вечер"
         }
     }
 }
