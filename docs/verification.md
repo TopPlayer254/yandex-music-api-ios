@@ -13,25 +13,28 @@
 
 ## Executed in GitHub Actions
 
-- Xcode 16.4 generated the project with XcodeGen 2.46.0.
-- `xcodebuild build-for-testing` compiled the app and XCTest target for generic iOS Simulator.
+- [Workflow run #5](https://github.com/TopPlayer254/yandex-music-api-ios/actions/runs/34031465286)
+  used Xcode 26.3 and generated the project with XcodeGen 2.46.0.
+- `xcodebuild test` compiled and passed the XCTest suite on iPhone 16 Pro / iOS 26.2.
 - `xcodebuild archive` produced an unsigned arm64 device archive.
 - The archive was packaged as `dist/MapleMusic-unsigned.ipa`; local SHA-256:
-  `2a1eaf73f151cfdee86b2853980f722c7d7d8e823f86f472dc279c5f004c483e`.
+  `a46bd79a279f4aad04669e586c28e789c7f12b17ee9337c39e91a130bc9b9179`.
 - The IPA structure contains `Payload/MapleMusic.app/Info.plist` and no
   `embedded.mobileprovision` or `_CodeSignature` entry.
+- The packaged app reports bundle ID `com.hikeri.yamusic`, version `0.4.0`, build `5`,
+  `UIFileSharingEnabled = true`, and `LSSupportsOpeningDocumentsInPlace = true`.
 
 ## Not executed
 
-No Swift/iOS SDK or macOS runtime is available locally. The cloud job performed Swift type checking
-and a device archive, but XCTest execution requires a concrete simulator runtime and was not run.
+No Swift/iOS SDK or macOS runtime is available locally. The cloud job performed Swift type checking,
+XCTest execution on a concrete simulator, and a device archive.
 Actual-device login, authenticated catalogue/playback/lossless requests, audio decoding, background
 playback and download/relaunch UI checks still require manual testing with the user's account.
 
 XCTest target includes mixed-type API IDs and Cyrillic metadata, LRC offset/multiple tags,
 an AES-CTR known-answer vector, account isolation and offline metadata persistence,
-download permission checks, PKCE and demo-service checks. These compiled successfully, but are not
-reported as executed or passed.
+bulk deletion that preserves untracked Files documents, download permission checks, PKCE and
+demo-service checks. These tests executed successfully.
 
 ## Protocol references
 
