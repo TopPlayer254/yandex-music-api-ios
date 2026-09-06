@@ -77,7 +77,7 @@ private enum KeychainCodableStore {
 }
 
 actor KeychainTokenVault {
-    private let service = "app.maplemusic.oauth"
+    private let service = "com.hikeri.yamusic.oauth"
     private let account: String
 
     init(account: String = "yandex-token") { self.account = account }
@@ -96,7 +96,7 @@ actor KeychainTokenVault {
 }
 
 actor BackendSessionVault {
-    private let service = "app.maplemusic.backend-session"
+    private let service = "com.hikeri.yamusic.backend-session"
     private let account = "current-session"
 
     func load() throws -> BackendSession? {

@@ -4,7 +4,7 @@ options:
   minimumXcodeGenVersion: 2.46.0
   xcodeVersion: "16.4"
   projectFormat: xcode16_0
-  bundleIdPrefix: app.maplemusic
+  bundleIdPrefix: com.hikeri.yamusic
   deploymentTarget:
     iOS: "17.0"
   generateEmptyDirectories: true
@@ -58,12 +58,12 @@ targets:
         MusicBackendBaseURL: $(MUSIC_BACKEND_BASE_URL)
         CFBundleURLTypes:
           - CFBundleTypeRole: Editor
-            CFBundleURLName: app.maplemusic.oauth
+            CFBundleURLName: com.hikeri.yamusic.oauth
             CFBundleURLSchemes:
               - maplemusic
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.maplemusic.client
+        PRODUCT_BUNDLE_IDENTIFIER: com.hikeri.yamusic
         PRODUCT_NAME: MapleMusic
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
@@ -85,5 +85,5 @@ targets:
       - target: MapleMusic
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.maplemusic.client.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.hikeri.yamusic.tests
         GENERATE_INFOPLIST_FILE: YES
