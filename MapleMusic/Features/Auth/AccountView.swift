@@ -337,6 +337,7 @@ private struct AudioProviderSettingsView: View {
 
 private struct StorageSettingsView: View {
     @EnvironmentObject private var downloads: DownloadsStore
+    @EnvironmentObject private var player: PlayerStore
     @State private var showsClearDownloadsConfirmation = false
 
     var body: some View {
@@ -376,7 +377,12 @@ private struct StorageSettingsView: View {
             titleVisibility: .visible
         ) {
             Button("Удалить все треки", role: .destructive) {
-                Task { await downloads.removeAll() }
+                Task {
+                    if let track = player.currentTrack, downloads.isDownloaded(track) {
+                        player.stop()
+                    }
+                    await downloads.removeAll()
+                }
             }
             Button("Отмена", role: .cancel) {}
         } message: {
