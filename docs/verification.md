@@ -13,15 +13,17 @@
 
 ## Executed in GitHub Actions
 
-- [Workflow run #8](https://github.com/TopPlayer254/yandex-music-api-ios/actions/runs/34039065751)
+- [Workflow run #11](https://github.com/TopPlayer254/yandex-music-api-ios/actions/runs/34246944941)
   used Xcode 26.3 and generated the project with XcodeGen 2.46.0.
-- `xcodebuild test` compiled and passed the XCTest suite on iPhone 16 Pro / iOS 26.2.
+- `xcodebuild test` compiled and passed the XCTest suite on an available iPhone simulator.
+  The workflow now discovers a registered simulator instead of assuming one fixed device; if a runner
+  exposes only the Simulator SDK, it falls back to `build-for-testing` before the device archive.
 - `xcodebuild archive` produced an unsigned arm64 device archive.
 - The archive was packaged as `dist/MapleMusic-unsigned.ipa`; local SHA-256:
-  `d83ca111039308d19659e4a3815049ac74dccd0ef994b104efedc58237ae9a29`.
+  `f6b07a0cb0ebd2342d828eb59507323112506ce3b7e995c028228116b576d996`.
 - The IPA structure contains `Payload/MapleMusic.app/Info.plist` and no
   `embedded.mobileprovision` or `_CodeSignature` entry.
-- The packaged app reports bundle ID `com.hikeri.yamusic`, version `0.7.0`, build `8`,
+- The packaged app reports bundle ID `com.hikeri.yamusic`, version `0.8.1`, build `11`,
   `UIFileSharingEnabled = true`, and `LSSupportsOpeningDocumentsInPlace = true`.
 
 ## Not executed
@@ -35,7 +37,8 @@ XCTest target includes mixed-type API IDs and Cyrillic metadata, LRC offset/mult
 an AES-CTR known-answer vector, account isolation and offline metadata persistence,
 bulk deletion that preserves untracked Files documents, download permission checks, PKCE and
 demo-service checks, the standard-quality signing vector, and distinct Standard/Lossless choices.
-The suite also verifies Genius HTML cleanup and backward decoding of existing offline lyrics metadata.
+The suite also verifies Genius HTML cleanup, album/artist parsing, legacy search-response compatibility,
+and backward decoding of existing offline lyrics metadata.
 These tests executed successfully.
 
 ## Protocol references
