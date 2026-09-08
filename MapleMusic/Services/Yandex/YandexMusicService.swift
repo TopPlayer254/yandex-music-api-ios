@@ -53,9 +53,17 @@ actor YandexMusicService: MusicService {
     }
 
     func home() async throws -> HomeFeed {
+        var waveWarning: String?
         do {
             let result = try await request("rotor/station/user:onyourwave/tracks", query: ["settings2": "true"])
-            let tracks = result["sequence"].array.compactMap { $0["track"].track() }
+            let sequence = result["sequence"].array
+            let rawTitles = sequence.compactMap { $0["track"]["title"].string }
+            let receivedTracks = sequence.compactMap { $0["track"].track() }
+            let tracks = receivedTracks.filter { !Self.isPromotionTrack($0) }
+            let onlyPromotions = !rawTitles.isEmpty && rawTitles.allSatisfy(Self.isPromotionTitle)
+            if onlyPromotions || (!receivedTracks.isEmpty && tracks.isEmpty) {
+                waveWarning = YandexStrings.shadowBanMessage
+            }
             if !tracks.isEmpty {
                 return HomeFeed(greeting: "Слушать сейчас", featured: Array(tracks.prefix(5)), shelves: [
                     MusicShelf(id: "my-wave", title: "Моя волна", subtitle: "Для вас", layout: .list, tracks: tracks)
@@ -74,14 +82,32 @@ actor YandexMusicService: MusicService {
         let chart = result["chart"]
         let tracks = chart["tracks"].array.compactMap { $0["track"].track() ?? $0.track() }
         guard !tracks.isEmpty else { throw MusicServiceError.invalidResponse }
-        return HomeFeed(greeting: "Слушать сейчас", featured: Array(tracks.prefix(5)), shelves: [
-            MusicShelf(
-                id: "chart",
-                title: result["title"].string ?? chart["title"].string ?? "Чарт",
-                subtitle: "Популярные треки",
+        var shelves: [MusicShelf] = []
+        if let waveWarning {
+            shelves.append(MusicShelf(
+                id: "my-wave-shadow-ban",
+                title: YandexStrings.shadowBanTitle,
+                subtitle: waveWarning,
                 layout: .list,
-                tracks: tracks
-            )
+                tracks: []
+            ))
+        }
+        shelves.append(MusicShelf(
+            id: "chart",
+            title: result["title"].string ?? chart["title"].string ?? "Чарт",
+            subtitle: "Популярные треки",
+            layout: .list,
+            tracks: tracks
+        ))
+        return HomeFeed(greeting: "Слушать сейчас", featured: Array(tracks.prefix(5)), shelves: shelves)
+    }
+
+    func setWaveSettings(_ settings: WaveConfiguration) async throws {
+        _ = try await request("rotor/station/user:onyourwave/settings3", form: [
+            "moodEnergy": settings.moodEnergy.rawValue,
+            "diversity": settings.diversity.rawValue,
+            "language": settings.language.rawValue,
+            "type": "rotor",
         ])
     }
 
@@ -360,6 +386,12 @@ actor YandexMusicService: MusicService {
     }
     static func sign(_ message: String) -> String {
         Data(HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: SymmetricKey(data: Data(signatureKey.utf8)))).base64EncodedString()
+    }
+    private static func isPromotionTrack(_ track: Track) -> Bool {
+        isPromotionTitle(track.title)
+    }
+    private static func isPromotionTitle(_ title: String) -> Bool {
+        title.localizedCaseInsensitiveCompare("Промокод Upgrade") == .orderedSame
     }
     private func request(_ path: String, query: [String: String] = [:], form: [String: String]? = nil) async throws -> YandexJSON {
         guard let token = await token(), !token.isEmpty else { throw MusicServiceError.unauthorized }

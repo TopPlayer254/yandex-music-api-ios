@@ -32,6 +32,66 @@ enum RepeatMode: String, Codable, CaseIterable, Sendable {
     case one
 }
 
+enum WaveMoodEnergy: String, Codable, CaseIterable, Identifiable, Sendable {
+    case all
+    case fun
+    case active
+    case calm
+    case sad
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .all: "Любое"
+        case .fun: "Весёлое"
+        case .active: "Энергичное"
+        case .calm: "Спокойное"
+        case .sad: "Грустное"
+        }
+    }
+}
+
+enum WaveDiversity: String, Codable, CaseIterable, Identifiable, Sendable {
+    case `default`
+    case favorite
+    case popular
+    case discover
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .default: "Сбалансированно"
+        case .favorite: "Больше любимых"
+        case .popular: "Популярные"
+        case .discover: "Больше нового"
+        }
+    }
+}
+
+enum WaveLanguage: String, Codable, CaseIterable, Identifiable, Sendable {
+    case any
+    case russian
+    case notRussian = "not-russian"
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .any: "Любой"
+        case .russian: "Русский"
+        case .notRussian: "Без русского"
+        }
+    }
+}
+
+struct WaveConfiguration: Codable, Hashable, Sendable {
+    var moodEnergy: WaveMoodEnergy = .all
+    var diversity: WaveDiversity = .default
+    var language: WaveLanguage = .any
+}
+
 struct Artist: Codable, Hashable, Identifiable, Sendable {
     let id: String
     let name: String

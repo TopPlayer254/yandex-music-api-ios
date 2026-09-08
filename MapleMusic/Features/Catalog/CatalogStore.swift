@@ -52,6 +52,18 @@ final class CatalogStore: ObservableObject {
         }
     }
 
+    func applyWaveSettings(_ settings: WaveConfiguration) async -> Bool {
+        do {
+            try await service.setWaveSettings(settings)
+            await refreshHome()
+            return homeErrorMessage == nil
+        } catch {
+            guard !Self.isCancellation(error) else { return false }
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     func refreshLibrary() async {
         do {
             library = try await service.library()

@@ -55,11 +55,13 @@ final class YandexDeviceLogin: NSObject, ObservableObject, ASWebAuthenticationPr
                     case "slow_down": interval += 5
                     default:
                         let detail = result["error_description"].string ?? result["error"].string
-                        throw MusicServiceError.message(detail.map { "Яндекс отклонил вход: \($0)" }
-                            ?? "Вход отклонён или время ожидания истекло. Запросите новый код.")
+                        throw MusicServiceError.message(YandexStrings.readableLoginError(
+                            code: result["error"].string,
+                            detail: detail
+                        ))
                     }
                 }
-                throw MusicServiceError.message("Срок действия кода входа истёк.")
+                throw MusicServiceError.message(YandexStrings.loginExpired)
             } catch is CancellationError { }
             catch { self.error = error.localizedDescription }
         }

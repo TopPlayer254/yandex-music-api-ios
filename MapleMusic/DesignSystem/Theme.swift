@@ -38,17 +38,107 @@ enum AccentColorChoice: String, CaseIterable, Identifiable {
     }
 }
 
+enum InterfaceStyleChoice: String, CaseIterable, Identifiable {
+    case automatic
+    case light
+    case dark
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .automatic: "Авто"
+        case .light: "Светлая"
+        case .dark: "Тёмная"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .automatic: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
 @MainActor
 final class AppearanceSettings: ObservableObject {
     @Published var accent: AccentColorChoice {
         didSet { UserDefaults.standard.set(accent.rawValue, forKey: "accent-color") }
     }
 
+    @Published var interfaceStyle: InterfaceStyleChoice {
+        didSet { UserDefaults.standard.set(interfaceStyle.rawValue, forKey: "interface-style") }
+    }
+
     init() {
         accent = AccentColorChoice(rawValue: UserDefaults.standard.string(forKey: "accent-color") ?? "") ?? .yandexYellow
+        interfaceStyle = InterfaceStyleChoice(
+            rawValue: UserDefaults.standard.string(forKey: "interface-style") ?? ""
+        ) ?? .automatic
     }
 
     var tint: Color { accent.color }
+}
+
+private struct MarqueeTextWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+struct MarqueeText: View {
+    let text: String
+    let font: Font
+    let color: Color
+    let height: CGFloat
+
+    @State private var textWidth: CGFloat = 0
+    @State private var containerWidth: CGFloat = 0
+    @State private var offset: CGFloat = 0
+
+    init(_ text: String, font: Font, color: Color, height: CGFloat) {
+        self.text = text
+        self.font = font
+        self.color = color
+        self.height = height
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            Text(text)
+                .font(font)
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .background {
+                    GeometryReader { textProxy in
+                        Color.clear.preference(key: MarqueeTextWidthKey.self, value: textProxy.size.width)
+                    }
+                }
+                .offset(x: offset)
+                .frame(maxHeight: .infinity, alignment: .center)
+                .onAppear { containerWidth = proxy.size.width }
+                .onChange(of: proxy.size.width) { _, width in containerWidth = width }
+        }
+        .frame(height: height)
+        .clipped()
+        .onPreferenceChange(MarqueeTextWidthKey.self) { textWidth = $0 }
+        .task(id: "\(text)|\(Int(textWidth))|\(Int(containerWidth))") {
+            offset = 0
+            let overflow = max(textWidth - containerWidth, 0)
+            guard overflow > 8 else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            withAnimation(.linear(duration: max(3.5, Double(overflow / 24))).repeatForever(autoreverses: true)) {
+                offset = -overflow
+            }
+        }
+        .accessibilityLabel(text)
+    }
 }
 
 extension Color {
@@ -150,17 +240,19 @@ struct ArtworkView: View {
     let artwork: Artwork
     var cornerRadius: CGFloat = 12
     @State private var image: UIImage?
-    @State private var hasFinishedLoading = false
+    @State private var loadedURL: URL?
+    @State private var finishedURL: URL?
 
     var body: some View {
-        let displayedImage = image ?? artwork.url.flatMap { ArtworkImageCache.shared.cachedImage(for: $0) }
+        let cachedImage = artwork.url.flatMap { ArtworkImageCache.shared.cachedImage(for: $0) }
+        let displayedImage = loadedURL == artwork.url ? image ?? cachedImage : cachedImage
         ZStack {
             Color(uiColor: .secondarySystemBackground)
             if let displayedImage {
                 Image(uiImage: displayedImage)
                     .resizable()
                     .scaledToFill()
-            } else if artwork.url != nil, !hasFinishedLoading {
+            } else if let url = artwork.url, finishedURL != url {
                 ProgressView().controlSize(.small)
             } else {
                 placeholder
@@ -169,16 +261,26 @@ struct ArtworkView: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .accessibilityHidden(true)
         .task(id: artwork.url) {
-            hasFinishedLoading = artwork.url == nil
-            guard let url = artwork.url else { return }
+            guard let url = artwork.url else {
+                image = nil
+                loadedURL = nil
+                finishedURL = nil
+                return
+            }
             if let cached = ArtworkImageCache.shared.cachedImage(for: url) {
                 image = cached
-                hasFinishedLoading = true
+                loadedURL = url
+                finishedURL = url
                 return
             }
             image = nil
-            image = await ArtworkImageCache.shared.image(for: url)
-            hasFinishedLoading = true
+            loadedURL = nil
+            finishedURL = nil
+            let loaded = await ArtworkImageCache.shared.image(for: url)
+            guard !Task.isCancelled, artwork.url == url else { return }
+            image = loaded
+            loadedURL = url
+            finishedURL = url
         }
     }
 

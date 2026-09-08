@@ -7,6 +7,12 @@ final class DemoMusicServiceTests: XCTestCase {
         let home = try await service.home()
         XCTAssertFalse(home.featured.isEmpty)
 
+        try await service.setWaveSettings(WaveConfiguration(
+            moodEnergy: .active,
+            diversity: .discover,
+            language: .russian
+        ))
+
         let results = try await service.search(query: "Northern")
         XCTAssertEqual(results.tracks.first?.id, "northern-lights")
 
@@ -24,5 +30,12 @@ final class DemoMusicServiceTests: XCTestCase {
 
         let lyrics = try await service.lyrics(for: home.featured[0])
         XCTAssertFalse(lyrics?.lines.isEmpty ?? true)
+    }
+
+    func testWaveSettingsUseRotorContractValues() {
+        XCTAssertEqual(WaveMoodEnergy.active.rawValue, "active")
+        XCTAssertEqual(WaveDiversity.discover.rawValue, "discover")
+        XCTAssertEqual(WaveLanguage.notRussian.rawValue, "not-russian")
+        XCTAssertEqual(WaveConfiguration().language, .any)
     }
 }

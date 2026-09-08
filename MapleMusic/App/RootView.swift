@@ -20,8 +20,9 @@ struct RootView: View {
                 LegacyTabs(selection: $selection)
             }
         }
-        .fullScreenCover(isPresented: $player.isShowingNowPlaying) {
+        .sheet(isPresented: $player.isShowingNowPlaying) {
             NowPlayingView()
+                .presentationCornerRadius(34)
         }
         .alert("Музыкальный сервис", isPresented: Binding(
             get: { catalog.errorMessage != nil || downloads.errorMessage != nil },
@@ -55,18 +56,15 @@ private struct ModernTabs: View {
     @EnvironmentObject private var player: PlayerStore
     @Binding var selection: AppTab
 
-    @ViewBuilder
     var body: some View {
-        if let track = player.currentTrack {
-            tabs
-                .tabBarMinimizeBehavior(.onScrollDown)
-                .tabViewBottomAccessory {
+        tabs
+            .tabBarMinimizeBehavior(.onScrollDown)
+            .tabViewBottomAccessory {
+                if let track = player.currentTrack {
                     ModernMiniPlayer(track: track)
                 }
-        } else {
-            tabs
-                .tabBarMinimizeBehavior(.onScrollDown)
-        }
+            }
+            .animation(.smooth(duration: 0.28), value: player.currentTrack?.id)
     }
 
     private var tabs: some View {
@@ -132,32 +130,39 @@ private struct ModernMiniPlayer: View {
     var body: some View {
         if placement == .inline {
             HStack(spacing: 8) {
-                Button { player.isShowingNowPlaying = true } label: {
+                Button { showNowPlaying() } label: {
                     HStack(spacing: 8) {
                         ArtworkView(artwork: track.artwork, cornerRadius: 6)
                             .frame(width: 32, height: 32)
-                        Text(track.title)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
+                        MarqueeText(
+                            track.title,
+                            font: .caption.weight(.semibold),
+                            color: .primary,
+                            height: 17
+                        )
                         Spacer(minLength: 2)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                playbackButton(size: 36)
+                playbackButton(size: 44)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
         } else {
             HStack(spacing: 8) {
-                Button { player.isShowingNowPlaying = true } label: {
+                Button { showNowPlaying() } label: {
                     HStack(spacing: 10) {
                         ArtworkView(artwork: track.artwork, cornerRadius: 7)
                             .frame(width: 44, height: 44)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(track.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
-                            Text(track.artist.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        VStack(alignment: .leading, spacing: 1) {
+                            MarqueeText(
+                                track.title,
+                                font: .subheadline.weight(.semibold),
+                                color: .primary,
+                                height: 20
+                            )
+                            MarqueeText(track.artist.name, font: .caption, color: .secondary, height: 16)
                         }
                         Spacer(minLength: 0)
                     }
@@ -187,6 +192,12 @@ private struct ModernMiniPlayer: View {
         .accessibilityLabel(player.isPlaying ? "Пауза" : "Воспроизвести")
     }
 
+    private func showNowPlaying() {
+        withAnimation(.smooth(duration: 0.28)) {
+            player.isShowingNowPlaying = true
+        }
+    }
+
 }
 
 private struct LegacyMiniPlayer: View {
@@ -195,13 +206,22 @@ private struct LegacyMiniPlayer: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Button { player.isShowingNowPlaying = true } label: {
+            Button {
+                withAnimation(.easeInOut(duration: 0.24)) {
+                    player.isShowingNowPlaying = true
+                }
+            } label: {
                 HStack(spacing: 10) {
                     ArtworkView(artwork: track.artwork, cornerRadius: 7)
                         .frame(width: 44, height: 44)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(track.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
-                        Text(track.artist.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    VStack(alignment: .leading, spacing: 1) {
+                        MarqueeText(
+                            track.title,
+                            font: .subheadline.weight(.semibold),
+                            color: .primary,
+                            height: 20
+                        )
+                        MarqueeText(track.artist.name, font: .caption, color: .secondary, height: 16)
                     }
                     Spacer(minLength: 0)
                 }

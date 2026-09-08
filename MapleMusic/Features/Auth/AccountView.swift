@@ -145,6 +145,15 @@ private struct AppearanceSettingsView: View {
 
     var body: some View {
         List {
+            Section("Тема") {
+                Picker("Тема", selection: $appearance.interfaceStyle) {
+                    ForEach(InterfaceStyleChoice.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
             Section("Акцентный цвет") {
                 ForEach(AccentColorChoice.allCases) { option in
                     Button {
@@ -239,7 +248,7 @@ private struct AccountSettingsView: View {
                                 ProgressView()
                                 Text("Ожидание подтверждения…")
                             }
-                            Button("Отменить вход", role: .cancel) { deviceLogin.cancel() }
+                            Button("Прекратить ожидание", role: .cancel) { deviceLogin.cancel() }
                         }
                     } header: {
                         Text("Яндекс ID")

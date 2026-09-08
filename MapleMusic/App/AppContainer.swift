@@ -11,6 +11,7 @@ final class AppContainer: ObservableObject {
     let downloads: DownloadsStore
     let lyricsSettings: LyricsSettings
     let downloadPreferences: DownloadPreferences
+    let waveSettings: WaveSettings
     private let configuration: ProviderConfiguration
 
     init(configuration: ProviderConfiguration) {
@@ -47,6 +48,7 @@ final class AppContainer: ObservableObject {
         catalog = CatalogStore(service: service)
         lyricsSettings = LyricsSettings()
         downloadPreferences = DownloadPreferences()
+        waveSettings = WaveSettings()
         downloads = DownloadsStore(
             offlineStore: offlineStore,
             service: service,

@@ -92,6 +92,8 @@ actor DemoMusicService: MusicService {
         )
     }
 
+    func setWaveSettings(_ settings: WaveConfiguration) async throws { }
+
     func search(query: String) async throws -> MusicSearchResults {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty else { return MusicSearchResults() }

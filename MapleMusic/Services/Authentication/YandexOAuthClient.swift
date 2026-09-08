@@ -159,7 +159,7 @@ final class YandexOAuthClient: NSObject, ASWebAuthenticationPresentationContextP
                 }
             }
             session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = false
+            session.prefersEphemeralWebBrowserSession = true
             webSession = session
             if !session.start() {
                 webSession = nil

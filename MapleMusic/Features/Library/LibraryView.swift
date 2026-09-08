@@ -20,7 +20,7 @@ struct LibraryView: View {
                                 Label("Недавно добавленные", systemImage: "clock")
                             }
                             NavigationLink {
-                                TrackListView(title: "Любимые", tracks: library.liked)
+                                TrackListView(title: "Любимые", tracks: library.liked, showsDownloadAll: true)
                             } label: {
                                 Label("Любимые", systemImage: "heart.fill")
                             }
@@ -124,18 +124,25 @@ struct TrackListView: View {
     @EnvironmentObject private var downloads: DownloadsStore
     let title: String
     let tracks: [Track]
+    var showsDownloadAll = false
 
     var body: some View {
         List {
             if !tracks.isEmpty {
-                Button { Task { await player.play(tracks[0], queue: tracks) } } label: {
-                    Label("Воспроизвести", systemImage: "play.fill")
-                        .frame(maxWidth: .infinity)
-                        .font(.headline)
-                        .foregroundStyle(.white)
+                HStack(spacing: 10) {
+                    Button { Task { await player.play(tracks[0], queue: tracks) } } label: {
+                        Label("Воспроизвести", systemImage: "play.fill")
+                            .frame(maxWidth: .infinity)
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                    }
+                    .tint(appearance.tint)
+                    .adaptiveProminentButtonStyle()
+
+                    if showsDownloadAll {
+                        DownloadAllButton(tracks: tracks)
+                    }
                 }
-                .tint(appearance.tint)
-                .adaptiveProminentButtonStyle()
             }
             ForEach(tracks) { track in
                 TrackRow(
@@ -199,36 +206,20 @@ struct PlaylistView: View {
                         .tint(appearance.tint)
                         .adaptiveProminentButtonStyle()
 
-                        Button {
-                            Task { await downloads.downloadAll(playlist.tracks, quality: player.preferredQuality) }
-                        } label: {
-                            if let progress = downloads.bulkProgress {
-                                Label("\(progress.completed)/\(progress.total)", systemImage: "arrow.down.circle")
-                                    .frame(maxWidth: .infinity)
-                            } else {
-                                Label("Скачать всё", systemImage: "arrow.down.circle")
-                                    .frame(maxWidth: .infinity)
-                            }
-                        }
-                        .adaptiveSecondaryButtonStyle()
-                        .disabled(
-                            playlist.tracks.isEmpty
-                                || downloads.bulkProgress != nil
-                                || playlist.tracks.filter(\.downloadAllowed).allSatisfy(downloads.isDownloaded)
-                        )
-
-                        Button {
-                            if let random = playlist.tracks.randomElement() {
-                                player.isShuffling = true
-                                Task { await player.play(random, queue: playlist.tracks) }
-                            }
-                        } label: {
-                            Image(systemName: "shuffle")
-                                .frame(width: 44, height: 44)
-                        }
-                        .adaptiveSecondaryButtonStyle()
-                        .accessibilityLabel("Перемешать")
+                        DownloadAllButton(tracks: playlist.tracks)
                     }
+
+                    Button {
+                        if let random = playlist.tracks.randomElement() {
+                            player.isShuffling = true
+                            Task { await player.play(random, queue: playlist.tracks) }
+                        }
+                    } label: {
+                        Label("Перемешать", systemImage: "shuffle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .adaptiveSecondaryButtonStyle()
+                    .accessibilityLabel("Перемешать")
                 }
                 .listRowBackground(Color.clear)
                 .padding(.vertical)
@@ -264,6 +255,32 @@ struct PlaylistView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { loaded = await catalog.loadPlaylist(initialPlaylist.id) }
         .refreshable { loaded = await catalog.loadPlaylist(initialPlaylist.id) }
+    }
+}
+
+private struct DownloadAllButton: View {
+    @EnvironmentObject private var player: PlayerStore
+    @EnvironmentObject private var downloads: DownloadsStore
+    let tracks: [Track]
+
+    var body: some View {
+        Button {
+            Task { await downloads.downloadAll(tracks, quality: player.preferredQuality) }
+        } label: {
+            if let progress = downloads.bulkProgress {
+                Label("\(progress.completed)/\(progress.total)", systemImage: "arrow.down.circle")
+                    .frame(maxWidth: .infinity)
+            } else {
+                Label("Скачать всё", systemImage: "arrow.down.circle")
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .adaptiveSecondaryButtonStyle()
+        .disabled(
+            tracks.isEmpty
+                || downloads.bulkProgress != nil
+                || tracks.filter(\.downloadAllowed).allSatisfy(downloads.isDownloaded)
+        )
     }
 }
 

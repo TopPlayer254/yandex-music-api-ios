@@ -30,8 +30,10 @@ private struct ProviderRoot: View {
                 .environmentObject(container.downloads)
                 .environmentObject(container.lyricsSettings)
                 .environmentObject(container.downloadPreferences)
+                .environmentObject(container.waveSettings)
                 .task { await container.bootstrap() }
                 .tint(appearance.tint)
+                .preferredColorScheme(appearance.interfaceStyle.colorScheme)
                 .onDisappear { container.player.stop() }
     }
 }

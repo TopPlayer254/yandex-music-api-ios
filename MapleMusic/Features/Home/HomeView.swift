@@ -4,7 +4,9 @@ struct HomeView: View {
     @EnvironmentObject private var catalog: CatalogStore
     @EnvironmentObject private var player: PlayerStore
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var settings: ProviderSettings
     @State private var showsAccount = false
+    @State private var showsWaveSettings = false
 
     var body: some View {
         NavigationStack {
@@ -59,6 +61,7 @@ struct HomeView: View {
             }
             .refreshable { await catalog.refreshHome() }
             .sheet(isPresented: $showsAccount) { AccountView() }
+            .sheet(isPresented: $showsWaveSettings) { WaveSettingsView() }
         }
     }
 
@@ -96,10 +99,27 @@ struct HomeView: View {
     @ViewBuilder
     private func shelfView(_ shelf: MusicShelf) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(shelf.title).font(.title2.bold())
-                if let subtitle = shelf.subtitle {
-                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if shelf.id == "my-wave-shadow-ban" {
+                        Label(shelf.title, systemImage: "exclamationmark.triangle.fill")
+                            .font(.title3.bold())
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text(shelf.title).font(.title2.bold())
+                    }
+                    if let subtitle = shelf.subtitle {
+                        Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                if shelf.id == "my-wave", settings.configuration.kind == .yandex {
+                    Button { showsWaveSettings = true } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Настроить Мою волну")
                 }
             }
             .padding(.horizontal)

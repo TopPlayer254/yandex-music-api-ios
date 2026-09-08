@@ -25,6 +25,10 @@ actor BackendMusicService: MusicService {
         try await request(path: "/v1/home")
     }
 
+    func setWaveSettings(_ settings: WaveConfiguration) async throws {
+        try await send(path: "/v1/wave/settings", method: "POST", body: settings)
+    }
+
     func profile() async throws -> UserProfile { try await request(path: "/v1/me") }
 
     func search(query: String) async throws -> MusicSearchResults {
@@ -126,6 +130,14 @@ actor BackendMusicService: MusicService {
 
     private func requestWithoutBody(path: String, method: String) async throws {
         let request = try await makeRequest(path: path, query: [], method: method)
+        let (_, response) = try await session.data(for: request)
+        try validate(response)
+    }
+
+    private func send<Body: Encodable>(path: String, method: String, body: Body) async throws {
+        var request = try await makeRequest(path: path, query: [], method: method)
+        request.httpBody = try encoder.encode(body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let (_, response) = try await session.data(for: request)
         try validate(response)
     }

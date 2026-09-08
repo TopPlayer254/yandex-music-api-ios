@@ -29,7 +29,9 @@ struct NowPlayingView: View {
             ArtworkBackdrop(artwork: player.currentTrack?.artwork)
 
             VStack(spacing: 0) {
-                dismissHandle
+                header
+                    .padding(.horizontal, 14)
+                    .padding(.top, 8)
 
                 Group {
                     switch page {
@@ -44,34 +46,44 @@ struct NowPlayingView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.985)))
 
                 pageControls
-                    .padding(.horizontal, 32)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, 42)
+                    .padding(.bottom, 14)
             }
         }
         .animation(.easeInOut(duration: 0.24), value: page)
         .preferredColorScheme(.dark)
+        .presentationDragIndicator(.hidden)
         .onChange(of: player.currentTrack?.id) { _, trackID in
             if trackID == nil { dismiss() }
         }
     }
 
-    private var dismissHandle: some View {
-        Capsule()
-            .fill(.white.opacity(0.32))
-            .frame(width: 58, height: 5)
+    private var header: some View {
+        HStack(spacing: 12) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.down")
+                    .font(.headline)
+                    .frame(width: 42, height: 42)
+            }
+            .buttonStyle(.plain)
+
+            VStack(spacing: 2) {
+                Text(page.title.uppercased())
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.65))
+                MarqueeText(
+                    player.currentTrack?.albumTitle ?? "Maple Music",
+                    font: .caption,
+                    color: .white,
+                    height: 16
+                )
+            }
             .frame(maxWidth: .infinity)
-            .frame(height: 32)
-            .contentShape(Rectangle())
-            .onTapGesture { dismiss() }
-            .gesture(
-                DragGesture(minimumDistance: 10)
-                    .onEnded { gesture in
-                        if gesture.translation.height > 36 { dismiss() }
-                    }
-            )
-            .accessibilityElement()
-            .accessibilityLabel("Свернуть плеер")
-            .accessibilityAddTraits(.isButton)
+
+            moreMenu
+        }
+        .foregroundStyle(.white)
+        .frame(height: 46)
     }
 
     private var moreMenu: some View {
@@ -106,7 +118,6 @@ struct NowPlayingView: View {
             Image(systemName: "ellipsis")
                 .font(.headline)
                 .frame(width: 42, height: 42)
-                .background(.white.opacity(0.1), in: Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Действия с треком")
@@ -115,11 +126,10 @@ struct NowPlayingView: View {
     private var playerPage: some View {
         GeometryReader { proxy in
             let compact = proxy.size.height < 620
-            let contentWidth = min(max(proxy.size.width - 64, 240), 520)
-            let artworkSide = min(contentWidth * 0.8, proxy.size.height * (compact ? 0.34 : 0.4))
+            let artworkSide = min(proxy.size.width - 56, proxy.size.height * (compact ? 0.36 : 0.44))
 
-            VStack(spacing: 0) {
-                Spacer(minLength: compact ? 4 : 12)
+            VStack(spacing: compact ? 10 : 18) {
+                Spacer(minLength: compact ? 8 : 18)
 
                 if let track = player.currentTrack {
                     ArtworkView(artwork: track.artwork, cornerRadius: compact ? 12 : 16)
@@ -129,35 +139,33 @@ struct NowPlayingView: View {
                         .animation(.spring(response: 0.5, dampingFraction: 0.82), value: player.isPlaying)
                 }
 
-                Spacer(minLength: compact ? 12 : 24)
+                Spacer(minLength: compact ? 6 : 12)
                 metadata
-                    .frame(width: contentWidth)
-                Spacer().frame(height: compact ? 8 : 14)
                 scrubber
-                    .frame(width: contentWidth)
-                Spacer().frame(height: compact ? 8 : 14)
                 transportControls(compact: compact)
-                    .frame(width: contentWidth)
-                Spacer().frame(height: compact ? 8 : 16)
                 volumeControl
-                    .frame(width: contentWidth)
-                Spacer(minLength: compact ? 2 : 10)
+                Spacer(minLength: 2)
             }
-            .frame(width: contentWidth, height: proxy.size.height)
-            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 28)
         }
     }
 
     private var metadata: some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(player.currentTrack?.title ?? "Ничего не играет")
-                    .font(.title3.bold())
-                    .lineLimit(1)
-                Text(player.currentTrack?.artist.name ?? "")
-                    .font(.title3)
-                    .foregroundStyle(.white.opacity(0.68))
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                MarqueeText(
+                    player.currentTrack?.title ?? "Ничего не играет",
+                    font: .title3.bold(),
+                    color: .white,
+                    height: 25
+                )
+                MarqueeText(
+                    player.currentTrack?.artist.name ?? "",
+                    font: .title3,
+                    color: .white.opacity(0.68),
+                    height: 25
+                )
             }
 
             Spacer(minLength: 8)
@@ -166,16 +174,14 @@ struct NowPlayingView: View {
             }
             if let track = player.currentTrack {
                 Button { Task { await catalog.toggleFavorite(track) } } label: {
-                    Image(systemName: catalog.isFavorite(track) ? "star.fill" : "star")
+                    Image(systemName: catalog.isFavorite(track) ? "heart.fill" : "heart")
                         .font(.title3)
                         .foregroundStyle(catalog.isFavorite(track) ? appearance.tint : .white)
-                        .frame(width: 42, height: 42)
-                        .background(.white.opacity(0.1), in: Circle())
+                        .frame(width: 40, height: 40)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(catalog.isFavorite(track) ? "Убрать из любимого" : "Добавить в любимое")
             }
-            moreMenu
         }
         .foregroundStyle(.white)
     }
@@ -202,29 +208,29 @@ struct NowPlayingView: View {
     }
 
     private func transportControls(compact: Bool) -> some View {
-        HStack(spacing: 0) {
+        HStack {
             Button { player.previous() } label: {
                 Image(systemName: "backward.fill")
                     .font(.system(size: compact ? 28 : 32))
                     .frame(width: 58, height: 58)
             }
-            .frame(maxWidth: .infinity)
+            Spacer()
             Button { player.togglePlayback() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: compact ? 42 : 48, weight: .medium))
                     .frame(width: 76, height: 68)
                     .contentTransition(.symbolEffect(.replace))
             }
-            .frame(maxWidth: .infinity)
+            Spacer()
             Button { player.next() } label: {
                 Image(systemName: "forward.fill")
                     .font(.system(size: compact ? 28 : 32))
                     .frame(width: 58, height: 58)
             }
-            .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
+        .padding(.horizontal, 14)
     }
 
     private var volumeControl: some View {
@@ -245,7 +251,7 @@ struct NowPlayingView: View {
     }
 
     private var pageControls: some View {
-        HStack(spacing: 0) {
+        HStack {
             Button { page = page == .lyrics ? .player : .lyrics } label: {
                 Image(systemName: "quote.bubble")
                     .frame(width: 44, height: 44)
@@ -253,12 +259,12 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Текст песни")
-            .frame(maxWidth: .infinity)
+            Spacer()
             AirPlayButton()
                 .frame(width: 20, height: 20)
                 .frame(width: 44, height: 44)
                 .accessibilityLabel("AirPlay")
-                .frame(maxWidth: .infinity)
+            Spacer()
             Button { page = page == .queue ? .player : .queue } label: {
                 Image(systemName: "list.bullet")
                     .frame(width: 44, height: 44)
@@ -266,10 +272,8 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Очередь")
-            .frame(maxWidth: .infinity)
         }
         .font(.title3)
-        .frame(maxWidth: 520)
     }
 
     private var repeatTitle: String {
