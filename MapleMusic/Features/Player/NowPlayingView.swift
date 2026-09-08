@@ -29,9 +29,7 @@ struct NowPlayingView: View {
             ArtworkBackdrop(artwork: player.currentTrack?.artwork)
 
             VStack(spacing: 0) {
-                header
-                    .padding(.horizontal, 14)
-                    .padding(.top, 8)
+                dismissHandle
 
                 Group {
                     switch page {
@@ -46,82 +44,82 @@ struct NowPlayingView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.985)))
 
                 pageControls
-                    .padding(.horizontal, 42)
-                    .padding(.bottom, 14)
+                    .padding(.horizontal, 32)
+                    .padding(.bottom, 8)
             }
         }
         .animation(.easeInOut(duration: 0.24), value: page)
         .preferredColorScheme(.dark)
-        .presentationDragIndicator(.hidden)
         .onChange(of: player.currentTrack?.id) { _, trackID in
             if trackID == nil { dismiss() }
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 12) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.down")
-                    .font(.headline)
-                    .frame(width: 42, height: 42)
-            }
-            .buttonStyle(.plain)
-
-            VStack(spacing: 2) {
-                Text(page.title.uppercased())
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.65))
-                Text(player.currentTrack?.albumTitle ?? "Maple Music")
-                    .font(.caption)
-                    .lineLimit(1)
-            }
+    private var dismissHandle: some View {
+        Capsule()
+            .fill(.white.opacity(0.32))
+            .frame(width: 58, height: 5)
             .frame(maxWidth: .infinity)
-
-            Menu {
-                Picker("Качество", selection: $player.preferredQuality) {
-                    ForEach(AudioQuality.selectableCases) { quality in
-                        Text(quality.title).tag(quality)
+            .frame(height: 32)
+            .contentShape(Rectangle())
+            .onTapGesture { dismiss() }
+            .gesture(
+                DragGesture(minimumDistance: 10)
+                    .onEnded { gesture in
+                        if gesture.translation.height > 36 { dismiss() }
                     }
-                }
+            )
+            .accessibilityElement()
+            .accessibilityLabel("Свернуть плеер")
+            .accessibilityAddTraits(.isButton)
+    }
 
-                if let track = player.currentTrack {
-                    TrackActions(track: track)
-                    if downloads.isDownloaded(track) {
-                        Button("Удалить загрузку", systemImage: "trash", role: .destructive) {
-                            Task { await downloads.remove(track) }
-                        }
-                    } else if track.downloadAllowed {
-                        Button("Загрузить", systemImage: "arrow.down.circle") {
-                            Task { await downloads.download(track, quality: player.preferredQuality) }
-                        }
-                    }
+    private var moreMenu: some View {
+        Menu {
+            Picker("Качество", selection: $player.preferredQuality) {
+                ForEach(AudioQuality.selectableCases) { quality in
+                    Text(quality.title).tag(quality)
                 }
-
-                Divider()
-                Button(player.isShuffling ? "Выключить перемешивание" : "Перемешать", systemImage: "shuffle") {
-                    player.isShuffling.toggle()
-                }
-                Button(repeatTitle, systemImage: player.repeatMode == .one ? "repeat.1" : "repeat") {
-                    player.cycleRepeatMode()
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.headline)
-                    .frame(width: 42, height: 42)
             }
-            .buttonStyle(.plain)
+
+            if let track = player.currentTrack {
+                TrackActions(track: track)
+                if downloads.isDownloaded(track) {
+                    Button("Удалить загрузку", systemImage: "trash", role: .destructive) {
+                        Task { await downloads.remove(track) }
+                    }
+                } else if track.downloadAllowed {
+                    Button("Загрузить", systemImage: "arrow.down.circle") {
+                        Task { await downloads.download(track, quality: player.preferredQuality) }
+                    }
+                }
+            }
+
+            Divider()
+            Button(player.isShuffling ? "Выключить перемешивание" : "Перемешать", systemImage: "shuffle") {
+                player.isShuffling.toggle()
+            }
+            Button(repeatTitle, systemImage: player.repeatMode == .one ? "repeat.1" : "repeat") {
+                player.cycleRepeatMode()
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.headline)
+                .frame(width: 42, height: 42)
+                .background(.white.opacity(0.1), in: Circle())
         }
-        .foregroundStyle(.white)
-        .frame(height: 46)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Действия с треком")
     }
 
     private var playerPage: some View {
         GeometryReader { proxy in
             let compact = proxy.size.height < 620
-            let artworkSide = min(proxy.size.width - 56, proxy.size.height * (compact ? 0.36 : 0.44))
+            let contentWidth = min(max(proxy.size.width - 64, 240), 520)
+            let artworkSide = min(contentWidth * 0.8, proxy.size.height * (compact ? 0.34 : 0.4))
 
-            VStack(spacing: compact ? 10 : 18) {
-                Spacer(minLength: compact ? 8 : 18)
+            VStack(spacing: 0) {
+                Spacer(minLength: compact ? 4 : 12)
 
                 if let track = player.currentTrack {
                     ArtworkView(artwork: track.artwork, cornerRadius: compact ? 12 : 16)
@@ -131,15 +129,22 @@ struct NowPlayingView: View {
                         .animation(.spring(response: 0.5, dampingFraction: 0.82), value: player.isPlaying)
                 }
 
-                Spacer(minLength: compact ? 6 : 12)
+                Spacer(minLength: compact ? 12 : 24)
                 metadata
+                    .frame(width: contentWidth)
+                Spacer().frame(height: compact ? 8 : 14)
                 scrubber
+                    .frame(width: contentWidth)
+                Spacer().frame(height: compact ? 8 : 14)
                 transportControls(compact: compact)
+                    .frame(width: contentWidth)
+                Spacer().frame(height: compact ? 8 : 16)
                 volumeControl
-                Spacer(minLength: 2)
+                    .frame(width: contentWidth)
+                Spacer(minLength: compact ? 2 : 10)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 28)
+            .frame(width: contentWidth, height: proxy.size.height)
+            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
         }
     }
 
@@ -161,14 +166,16 @@ struct NowPlayingView: View {
             }
             if let track = player.currentTrack {
                 Button { Task { await catalog.toggleFavorite(track) } } label: {
-                    Image(systemName: catalog.isFavorite(track) ? "heart.fill" : "heart")
+                    Image(systemName: catalog.isFavorite(track) ? "star.fill" : "star")
                         .font(.title3)
                         .foregroundStyle(catalog.isFavorite(track) ? appearance.tint : .white)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 42, height: 42)
+                        .background(.white.opacity(0.1), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(catalog.isFavorite(track) ? "Убрать из любимого" : "Добавить в любимое")
             }
+            moreMenu
         }
         .foregroundStyle(.white)
     }
@@ -195,29 +202,29 @@ struct NowPlayingView: View {
     }
 
     private func transportControls(compact: Bool) -> some View {
-        HStack {
+        HStack(spacing: 0) {
             Button { player.previous() } label: {
                 Image(systemName: "backward.fill")
                     .font(.system(size: compact ? 28 : 32))
                     .frame(width: 58, height: 58)
             }
-            Spacer()
+            .frame(maxWidth: .infinity)
             Button { player.togglePlayback() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: compact ? 42 : 48, weight: .medium))
                     .frame(width: 76, height: 68)
                     .contentTransition(.symbolEffect(.replace))
             }
-            Spacer()
+            .frame(maxWidth: .infinity)
             Button { player.next() } label: {
                 Image(systemName: "forward.fill")
                     .font(.system(size: compact ? 28 : 32))
                     .frame(width: 58, height: 58)
             }
+            .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
-        .padding(.horizontal, 14)
     }
 
     private var volumeControl: some View {
@@ -238,7 +245,7 @@ struct NowPlayingView: View {
     }
 
     private var pageControls: some View {
-        HStack {
+        HStack(spacing: 0) {
             Button { page = page == .lyrics ? .player : .lyrics } label: {
                 Image(systemName: "quote.bubble")
                     .frame(width: 44, height: 44)
@@ -246,12 +253,12 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Текст песни")
-            Spacer()
+            .frame(maxWidth: .infinity)
             AirPlayButton()
                 .frame(width: 20, height: 20)
                 .frame(width: 44, height: 44)
                 .accessibilityLabel("AirPlay")
-            Spacer()
+                .frame(maxWidth: .infinity)
             Button { page = page == .queue ? .player : .queue } label: {
                 Image(systemName: "list.bullet")
                     .frame(width: 44, height: 44)
@@ -259,8 +266,10 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Очередь")
+            .frame(maxWidth: .infinity)
         }
         .font(.title3)
+        .frame(maxWidth: 520)
     }
 
     private var repeatTitle: String {

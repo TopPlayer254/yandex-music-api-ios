@@ -16,7 +16,7 @@ actor GeniusLyricsClient {
         searchRequest.timeoutInterval = 20
         searchRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         searchRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-        searchRequest.setValue("MapleMusic/0.8 (iOS)", forHTTPHeaderField: "User-Agent")
+        searchRequest.setValue("MapleMusic/0.8.1 (iOS)", forHTTPHeaderField: "User-Agent")
         let (searchData, searchResponse) = try await session.data(for: searchRequest)
         try validate(searchResponse)
 
@@ -43,7 +43,7 @@ actor GeniusLyricsClient {
         pageRequest.timeoutInterval = 20
         pageRequest.cachePolicy = .returnCacheDataElseLoad
         pageRequest.setValue(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 MapleMusic/0.8",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 MapleMusic/0.8.1",
             forHTTPHeaderField: "User-Agent"
         )
         let (pageData, pageResponse) = try await session.data(for: pageRequest)

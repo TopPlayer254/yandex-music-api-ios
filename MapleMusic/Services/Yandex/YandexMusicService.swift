@@ -370,7 +370,7 @@ actor YandexMusicService: MusicService {
         request.timeoutInterval = 30
         request.setValue("OAuth \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("MapleMusic/0.8", forHTTPHeaderField: "User-Agent")
+        request.setValue("MapleMusic/0.8.1", forHTTPHeaderField: "User-Agent")
         if path == "get-file-info" {
             request.setValue("YandexMusicDesktopAppWindows/5.0.0", forHTTPHeaderField: "X-Yandex-Music-Client")
             request.setValue("new", forHTTPHeaderField: "X-Yandex-Music-Frontend")
