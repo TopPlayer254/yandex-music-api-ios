@@ -59,16 +59,31 @@ jobs:
           xcodebuild -list -project MapleMusic.xcodeproj
 
       - name: Run unit tests
-        run: >-
-          xcodebuild test
-          -project MapleMusic.xcodeproj
-          -scheme MapleMusic
-          -configuration Debug
-          -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=26.2'
-          -resultBundlePath "$RUNNER_TEMP/MapleMusic-tests.xcresult"
-          CODE_SIGNING_ALLOWED=NO
-          YANDEX_CLIENT_ID="$YANDEX_CLIENT_ID"
-          MUSIC_BACKEND_BASE_URL="$MUSIC_BACKEND_BASE_URL"
+        shell: bash
+        run: |
+          set -euo pipefail
+          simulator_json="$(xcrun simctl list devices available --json 2>/dev/null || printf '{"devices":{}}')"
+          simulator_id="$(jq -r '[.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone")))] | first | .udid // empty' <<< "$simulator_json")"
+          common=(
+            -project MapleMusic.xcodeproj
+            -scheme MapleMusic
+            -configuration Debug
+            CODE_SIGNING_ALLOWED=NO
+            YANDEX_CLIENT_ID="$YANDEX_CLIENT_ID"
+            MUSIC_BACKEND_BASE_URL="$MUSIC_BACKEND_BASE_URL"
+          )
+          if [[ -n "$simulator_id" ]]; then
+            echo "Running XCTest on simulator $simulator_id"
+            xcodebuild test "${common[@]}" \
+              -destination "platform=iOS Simulator,id=$simulator_id" \
+              -resultBundlePath "$RUNNER_TEMP/MapleMusic-tests.xcresult"
+            echo "XCTest executed on an available iPhone simulator." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::No iOS Simulator device is registered on this runner; compiling the app and test bundle instead."
+            xcodebuild build-for-testing "${common[@]}" \
+              -destination 'generic/platform=iOS Simulator'
+            echo "The runner exposed no Simulator device; the app and XCTest bundle were compiled with build-for-testing." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Archive device app without signing
         run: >-
