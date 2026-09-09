@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct LibraryView: View {
     @EnvironmentObject private var auth: AuthStore
@@ -180,6 +181,8 @@ struct PlaylistView: View {
     @EnvironmentObject private var downloads: DownloadsStore
     private let initialPlaylist: Playlist
     @State private var loaded: Playlist?
+    @State private var presentedSheet: PlaylistSheet?
+    @State private var showsFileImporter = false
     private var playlist: Playlist { loaded ?? initialPlaylist }
     init(playlist: Playlist) { initialPlaylist = playlist }
 
@@ -253,8 +256,228 @@ struct PlaylistView: View {
         .listStyle(.plain)
         .navigationTitle(playlist.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if playlist.isEditable {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            presentedSheet = .addFromLibrary
+                        } label: {
+                            Label("Добавить из медиатеки", systemImage: "music.note.list")
+                        }
+                        Button {
+                            showsFileImporter = true
+                        } label: {
+                            Label("Импортировать MP3", systemImage: "square.and.arrow.down")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Добавить треки")
+                }
+            }
+        }
         .task { loaded = await catalog.loadPlaylist(initialPlaylist.id) }
         .refreshable { loaded = await catalog.loadPlaylist(initialPlaylist.id) }
+        .fileImporter(
+            isPresented: $showsFileImporter,
+            allowedContentTypes: [.mp3],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case let .success(urls):
+                if let url = urls.first { presentedSheet = .importMetadata(url) }
+            case let .failure(error):
+                catalog.errorMessage = error.localizedDescription
+            }
+        }
+        .sheet(item: $presentedSheet) { destination in
+            switch destination {
+            case .addFromLibrary:
+                AddTracksToPlaylistView(playlist: playlist, onAdded: appendToDisplayedPlaylist)
+            case let .importMetadata(url):
+                ImportedMP3MetadataView(
+                    fileURL: url,
+                    playlist: playlist,
+                    onImported: appendToDisplayedPlaylist
+                )
+            }
+        }
+    }
+
+    private func appendToDisplayedPlaylist(_ track: Track) {
+        guard !playlist.tracks.contains(where: { $0.id == track.id }) else { return }
+        var updated = playlist
+        updated.tracks.append(track)
+        updated.totalTrackCount = (playlist.totalTrackCount ?? playlist.tracks.count) + 1
+        loaded = updated
+    }
+}
+
+private enum PlaylistSheet: Identifiable {
+    case addFromLibrary
+    case importMetadata(URL)
+
+    var id: String {
+        switch self {
+        case .addFromLibrary: "library"
+        case let .importMetadata(url): "import:\(url.absoluteString)"
+        }
+    }
+}
+
+private struct AddTracksToPlaylistView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var catalog: CatalogStore
+    let playlist: Playlist
+    let onAdded: (Track) -> Void
+    @State private var query = ""
+    @State private var addedTrackIDs: Set<String>
+
+    init(playlist: Playlist, onAdded: @escaping (Track) -> Void) {
+        self.playlist = playlist
+        self.onAdded = onAdded
+        _addedTrackIDs = State(initialValue: Set(playlist.tracks.map(\.id)))
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(filteredTracks) { track in
+                Button {
+                    Task {
+                        guard await catalog.add(track, to: playlist) else { return }
+                        addedTrackIDs.insert(track.id)
+                        onAdded(track)
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        ArtworkView(artwork: track.artwork, cornerRadius: 7)
+                            .frame(width: 48, height: 48)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(track.title).foregroundStyle(.primary).lineLimit(1)
+                            Text(track.artist.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer()
+                        Image(systemName: addedTrackIDs.contains(track.id) ? "checkmark.circle.fill" : "plus.circle")
+                            .font(.title3)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(addedTrackIDs.contains(track.id))
+            }
+            .overlay {
+                if availableTracks.isEmpty {
+                    ContentUnavailableView(
+                        "Нет доступных треков",
+                        systemImage: "music.note.list",
+                        description: Text("Добавьте музыку в медиатеку или импортируйте MP3.")
+                    )
+                }
+            }
+            .searchable(text: $query, prompt: "Название или исполнитель")
+            .navigationTitle("Добавить треки")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Готово") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var availableTracks: [Track] {
+        guard let library = catalog.library else { return [] }
+        var seen = Set<String>()
+        return (library.recentlyAdded + library.liked + library.playlists.flatMap(\.tracks)).filter {
+            seen.insert($0.id).inserted
+        }
+    }
+
+    private var filteredTracks: [Track] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return availableTracks }
+        return availableTracks.filter {
+            $0.title.localizedCaseInsensitiveContains(needle)
+                || $0.artist.name.localizedCaseInsensitiveContains(needle)
+        }
+    }
+}
+
+private struct ImportedMP3MetadataView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var catalog: CatalogStore
+    @EnvironmentObject private var downloads: DownloadsStore
+    let fileURL: URL
+    let playlist: Playlist
+    let onImported: (Track) -> Void
+    @State private var title: String
+    @State private var artist = "Неизвестный исполнитель"
+    @State private var album = "Без альбома"
+    @State private var isImporting = false
+
+    init(fileURL: URL, playlist: Playlist, onImported: @escaping (Track) -> Void) {
+        self.fileURL = fileURL
+        self.playlist = playlist
+        self.onImported = onImported
+        _title = State(initialValue: fileURL.deletingPathExtension().lastPathComponent)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Метаданные") {
+                    TextField("Название", text: $title)
+                    TextField("Исполнитель", text: $artist)
+                    TextField("Альбом", text: $album)
+                }
+                Section {
+                    LabeledContent("Файл", value: fileURL.lastPathComponent)
+                } footer: {
+                    Text("Файл копируется в локальное хранилище Maple Music и добавляется только в этот плейлист. На сервер Яндекса он не загружается.")
+                }
+            }
+            .navigationTitle("Импорт MP3")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Отмена") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Импортировать") { importFile() }
+                        .disabled(
+                            isImporting
+                                || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                || artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
+                }
+            }
+            .overlay {
+                if isImporting { ProgressView().controlSize(.large) }
+            }
+        }
+    }
+
+    private func importFile() {
+        isImporting = true
+        Task {
+            let hasSecurityScope = fileURL.startAccessingSecurityScopedResource()
+            defer {
+                if hasSecurityScope { fileURL.stopAccessingSecurityScopedResource() }
+                isImporting = false
+            }
+            if let track = await catalog.importMP3(
+                from: fileURL,
+                title: title,
+                artist: artist,
+                album: album,
+                into: playlist
+            ) {
+                await downloads.refresh()
+                onImported(track)
+                dismiss()
+            }
+        }
     }
 }
 

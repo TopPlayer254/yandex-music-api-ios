@@ -140,8 +140,9 @@ private struct DeveloperSettingsView: View {
                     "Use new shader-based wave toggle",
                     isOn: $developerSettings.usesNewShaderBasedWave
                 )
+                Toggle("Show codename", isOn: $developerSettings.showsCodename)
             } footer: {
-                Text("Включает на главной экспериментальную кнопку «Моей волны» с анимированными metaballs и палитрой выбранного настроения.")
+                Text("Первый переключатель включает новую карточку «Моей волны». Show codename заменяет заголовок главной на векторный логотип Maple.")
             }
         }
         .navigationTitle("Разработчик")

@@ -45,7 +45,7 @@ final class AppContainer: ObservableObject {
         }
         auth = AuthStore(configuration: configuration, vault: vault, profileLoader: profile)
         offlineStore = OfflineStore()
-        catalog = CatalogStore(service: service)
+        catalog = CatalogStore(service: service, offlineStore: offlineStore)
         lyricsSettings = LyricsSettings()
         downloadPreferences = DownloadPreferences()
         waveSettings = WaveSettings()

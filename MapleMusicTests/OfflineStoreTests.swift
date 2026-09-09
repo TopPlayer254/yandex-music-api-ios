@@ -78,4 +78,41 @@ final class OfflineStoreTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
     }
+
+    func testImportsMP3WithMetadataAndPersistsPlaylistMembership() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let source = root.appendingPathComponent("source.mp3")
+        try Data([0x49, 0x44, 0x33, 0x04]).write(to: source)
+        let offlineRoot = root.appendingPathComponent("offline", isDirectory: true)
+        let store = OfflineStore(root: offlineRoot)
+
+        let track = try await store.importMP3(
+            from: source,
+            title: "Custom title",
+            artistName: "Custom artist",
+            albumTitle: "Custom album",
+            duration: 42,
+            playlistID: "owner:playlist"
+        )
+        XCTAssertTrue(track.isLocalImport)
+        XCTAssertEqual(track.title, "Custom title")
+        XCTAssertEqual(track.artist.name, "Custom artist")
+        XCTAssertEqual(track.albumTitle, "Custom album")
+
+        let reopened = OfflineStore(root: offlineRoot)
+        let imported = await reopened.importedTracks(forPlaylistID: "owner:playlist")
+        XCTAssertEqual(imported, [track])
+        let asset = await reopened.localAsset(for: track)
+        XCTAssertEqual(asset?.codec, "mp3")
+        XCTAssertTrue(asset?.url.isFileURL == true)
+
+        try await reopened.addImportedTrack(track.id, toPlaylistID: "owner:other")
+        let copiedMembership = await reopened.importedTracks(forPlaylistID: "owner:other")
+        XCTAssertEqual(copiedMembership, [track])
+        try await reopened.removeImportedTrack(track.id, fromPlaylistID: "owner:playlist")
+        let removedMembership = await reopened.importedTracks(forPlaylistID: "owner:playlist")
+        XCTAssertTrue(removedMembership.isEmpty)
+    }
 }

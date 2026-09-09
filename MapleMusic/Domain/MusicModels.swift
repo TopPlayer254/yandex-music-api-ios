@@ -149,6 +149,10 @@ struct Track: Codable, Hashable, Identifiable, Sendable {
         self.downloadAllowed = downloadAllowed
         self.availableQualities = availableQualities
     }
+
+    var isLocalImport: Bool {
+        id.hasPrefix("local:")
+    }
 }
 
 struct Album: Codable, Hashable, Identifiable, Sendable {

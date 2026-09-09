@@ -20,10 +20,16 @@ actor OfflineStore {
         var entries: [String: OfflineEntry] = [:]
     }
 
+    private struct ImportedPlaylists: Codable {
+        var trackIDsByPlaylist: [String: [String]] = [:]
+    }
+
     private let baseRoot: URL
     private var root: URL
     private var manifestURL: URL
     private var manifest: Manifest
+    private var importedPlaylistsURL: URL
+    private var importedPlaylists: ImportedPlaylists
 
     init(root: URL? = nil) {
         let resolvedRoot: URL
@@ -39,17 +45,23 @@ actor OfflineStore {
         self.root = resolvedRoot
         self.baseRoot = resolvedRoot
         manifestURL = resolvedRoot.appendingPathComponent("manifest.json")
+        importedPlaylistsURL = resolvedRoot.appendingPathComponent("imported-playlists.json")
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         manifest = (try? Data(contentsOf: manifestURL)).flatMap { try? decoder.decode(Manifest.self, from: $0) } ?? Manifest()
+        importedPlaylists = (try? Data(contentsOf: importedPlaylistsURL))
+            .flatMap { try? decoder.decode(ImportedPlaylists.self, from: $0) } ?? ImportedPlaylists()
     }
 
     func setScope(_ scope: String) {
         root = baseRoot.appendingPathComponent(safeFileName(scope), isDirectory: true)
         manifestURL = root.appendingPathComponent("manifest.json")
+        importedPlaylistsURL = root.appendingPathComponent("imported-playlists.json")
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         manifest = (try? Data(contentsOf: manifestURL)).flatMap { try? decoder.decode(Manifest.self, from: $0) } ?? Manifest()
+        importedPlaylists = (try? Data(contentsOf: importedPlaylistsURL))
+            .flatMap { try? decoder.decode(ImportedPlaylists.self, from: $0) } ?? ImportedPlaylists()
     }
 
     func localLyrics(for trackID: String) -> Lyrics? { manifest.entries[trackID]?.lyrics }
@@ -77,6 +89,103 @@ actor OfflineStore {
             expiresAt: nil,
             allowsOfflineDownload: true
         )
+    }
+
+    func importedTracks(forPlaylistID playlistID: String) -> [Track] {
+        (importedPlaylists.trackIDsByPlaylist[playlistID] ?? []).compactMap { trackID in
+            guard contains(trackID: trackID) else { return nil }
+            return manifest.entries[trackID]?.track
+        }
+    }
+
+    @discardableResult
+    func importMP3(
+        from source: URL,
+        title: String,
+        artistName: String,
+        albumTitle: String,
+        duration: TimeInterval,
+        playlistID: String
+    ) throws -> Track {
+        guard source.isFileURL, source.pathExtension.lowercased() == "mp3" else {
+            throw MusicServiceError.message("Выберите файл MP3.")
+        }
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanArtist = artistName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanAlbum = albumTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty, !cleanArtist.isEmpty else {
+            throw MusicServiceError.message("Укажите название и исполнителя.")
+        }
+
+        try ensureRoot()
+        let trackID = "local:\(UUID().uuidString)"
+        let track = Track(
+            id: trackID,
+            title: cleanTitle,
+            artist: Artist(id: "local-artist:\(UUID().uuidString)", name: cleanArtist),
+            albumTitle: cleanAlbum,
+            duration: max(duration, 0),
+            artwork: Artwork(colors: ["FFCC00", "FF375F"]),
+            downloadAllowed: true,
+            availableQualities: [.high]
+        )
+        let relativePath = visibleFileName(for: track, extension: "mp3")
+        let destination = root.appendingPathComponent(relativePath)
+        guard isInsideRoot(destination) else { throw MusicServiceError.offlineUnavailable }
+        let temporary = root.appendingPathComponent(".\(UUID().uuidString).import")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try FileManager.default.copyItem(at: source, to: temporary)
+        try FileManager.default.moveItem(at: temporary, to: destination)
+
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        var mutableDestination = destination
+        try? mutableDestination.setResourceValues(resourceValues)
+        let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)
+        let entry = OfflineEntry(
+            trackID: trackID,
+            relativePath: relativePath,
+            quality: .high,
+            codec: "mp3",
+            bitDepth: nil,
+            sampleRate: nil,
+            byteCount: (attributes[.size] as? NSNumber)?.int64Value ?? 0,
+            savedAt: Date(),
+            track: track
+        )
+
+        let previousManifest = manifest
+        let previousImportedPlaylists = importedPlaylists
+        manifest.entries[trackID] = entry
+        importedPlaylists.trackIDsByPlaylist[playlistID, default: []].append(trackID)
+        do {
+            try persistManifest()
+            try persistImportedPlaylists()
+        } catch {
+            manifest = previousManifest
+            importedPlaylists = previousImportedPlaylists
+            try? FileManager.default.removeItem(at: destination)
+            try? persistManifest()
+            try? persistImportedPlaylists()
+            throw error
+        }
+        return track
+    }
+
+    func addImportedTrack(_ trackID: String, toPlaylistID playlistID: String) throws {
+        guard trackID.hasPrefix("local:"), contains(trackID: trackID) else {
+            throw MusicServiceError.offlineUnavailable
+        }
+        var trackIDs = importedPlaylists.trackIDsByPlaylist[playlistID, default: []]
+        guard !trackIDs.contains(trackID) else { return }
+        trackIDs.append(trackID)
+        importedPlaylists.trackIDsByPlaylist[playlistID] = trackIDs
+        try persistImportedPlaylists()
+    }
+
+    func removeImportedTrack(_ trackID: String, fromPlaylistID playlistID: String) throws {
+        importedPlaylists.trackIDsByPlaylist[playlistID]?.removeAll { $0 == trackID }
+        try persistImportedPlaylists()
     }
 
     @discardableResult
@@ -128,13 +237,21 @@ actor OfflineStore {
     }
 
     func remove(trackID: String) throws {
-        guard let entry = manifest.entries.removeValue(forKey: trackID) else { return }
+        let entry = manifest.entries.removeValue(forKey: trackID)
+        for playlistID in Array(importedPlaylists.trackIDsByPlaylist.keys) {
+            importedPlaylists.trackIDsByPlaylist[playlistID]?.removeAll { $0 == trackID }
+        }
+        guard let entry else {
+            try persistImportedPlaylists()
+            return
+        }
         let target = root.appendingPathComponent(entry.relativePath)
         guard isInsideRoot(target) else { throw MusicServiceError.offlineUnavailable }
         if FileManager.default.fileExists(atPath: target.path) {
             try FileManager.default.removeItem(at: target)
         }
         try persistManifest()
+        try persistImportedPlaylists()
     }
 
     func removeAll() throws {
@@ -146,7 +263,9 @@ actor OfflineStore {
             }
         }
         manifest.entries.removeAll()
+        importedPlaylists.trackIDsByPlaylist.removeAll()
         try persistManifest()
+        try persistImportedPlaylists()
     }
 
     private func ensureRoot() throws {
@@ -163,6 +282,13 @@ actor OfflineStore {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(manifest).write(to: manifestURL, options: .atomic)
+    }
+
+    private func persistImportedPlaylists() throws {
+        try ensureRoot()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(importedPlaylists).write(to: importedPlaylistsURL, options: .atomic)
     }
 
     private func isInsideRoot(_ url: URL) -> Bool {

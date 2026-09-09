@@ -215,10 +215,10 @@ actor YandexMusicService: MusicService {
         let uid = try await profile().id
         guard parts[0] == uid else { throw MusicServiceError.forbidden }
         let playlist = try await playlistJSON(playlistID)
-        let tracks = try await fetchTracks([trackID])
-        guard let track = tracks.first else { throw MusicServiceError.http(404) }
-        let trackParts = track.id.split(separator: ":").map(String.init)
-        guard trackParts.count == 2 else { throw MusicServiceError.message("У трека нет идентификатора альбома.") }
+        let trackParts = trackID.split(separator: ":").map(String.init)
+        guard trackParts.count == 2,
+              trackParts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) })
+        else { throw MusicServiceError.message("У трека нет идентификатора альбома.") }
         let operation: [[String: Any]] = [["op": "insert", "at": Int(playlist["trackCount"].number ?? 0),
                                           "tracks": [["id": trackParts[0], "albumId": trackParts[1]]]]]
         try await changePlaylist(parts: parts, revision: playlist["revision"].string, operations: operation)
@@ -419,7 +419,7 @@ actor YandexMusicService: MusicService {
         request.timeoutInterval = 30
         request.setValue("OAuth \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("MapleMusic/0.9.1", forHTTPHeaderField: "User-Agent")
+        request.setValue("MapleMusic/0.10.0", forHTTPHeaderField: "User-Agent")
         if path == "get-file-info" {
             request.setValue("YandexMusicDesktopAppWindows/5.0.0", forHTTPHeaderField: "X-Yandex-Music-Client")
             request.setValue("new", forHTTPHeaderField: "X-Yandex-Music-Frontend")

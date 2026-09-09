@@ -325,7 +325,12 @@ struct TrackRow: View {
             }
             .buttonStyle(.plain)
 
-            if isDownloading {
+            if track.isLocalImport {
+                Image(systemName: "internaldrive.fill")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Локальный файл")
+            } else if isDownloading {
                 ProgressView().controlSize(.small)
             } else {
                 Button(action: toggleDownload) {
@@ -337,10 +342,18 @@ struct TrackRow: View {
                 .disabled(!track.downloadAllowed)
                 .accessibilityLabel(isDownloaded ? "Удалить загрузку" : "Загрузить")
             }
+
+            Menu {
+                TrackActions(track: track)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .frame(width: 34, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Действия с треком")
         }
         .contentShape(Rectangle())
         .contextMenu { TrackActions(track: track) }
-        .accessibilityElement(children: .combine)
         .accessibilityAction(named: "Воспроизвести", play)
     }
 }
@@ -350,14 +363,21 @@ struct TrackActions: View {
     let track: Track
 
     var body: some View {
-        Button {
-            Task { await catalog.toggleFavorite(track) }
-        } label: {
-            Label(catalog.isFavorite(track) ? "Убрать из любимого" : "Добавить в любимое", systemImage: "heart")
+        if !track.isLocalImport {
+            Button {
+                Task { await catalog.toggleFavorite(track) }
+            } label: {
+                Label(catalog.isFavorite(track) ? "Убрать из любимого" : "Добавить в любимое", systemImage: "heart")
+            }
         }
         Menu("Добавить в плейлист") {
-            ForEach((catalog.library?.playlists ?? []).filter(\.isEditable)) { playlist in
-                Button(playlist.name) { Task { await catalog.add(track, to: playlist) } }
+            let playlists = (catalog.library?.playlists ?? []).filter(\.isEditable)
+            if playlists.isEmpty {
+                Text("Нет доступных плейлистов")
+            } else {
+                ForEach(playlists) { playlist in
+                    Button(playlist.name) { Task { await catalog.add(track, to: playlist) } }
+                }
             }
         }
     }

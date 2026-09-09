@@ -16,9 +16,18 @@ struct HomeView: View {
                 if let home = catalog.home, hasContent(home) {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 28) {
-                            featured(home.featured)
-                            ForEach(home.shelves) { shelf in
-                                shelfView(shelf)
+                            if developerSettings.usesNewShaderBasedWave,
+                               let wave = home.shelves.first(where: { $0.id == "my-wave" }) {
+                                shelfView(wave)
+                                featured(home.featured)
+                                ForEach(home.shelves.filter { $0.id != wave.id }) { shelf in
+                                    shelfView(shelf)
+                                }
+                            } else {
+                                featured(home.featured)
+                                ForEach(home.shelves) { shelf in
+                                    shelfView(shelf)
+                                }
                             }
                         }
                         .padding(.bottom, 20)
@@ -55,8 +64,20 @@ struct HomeView: View {
                     }
                 }
             }
-            .navigationTitle("Главная")
+            .navigationTitle(developerSettings.showsCodename ? "" : "Главная")
+            .navigationBarTitleDisplayMode(developerSettings.showsCodename ? .inline : .large)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    if developerSettings.showsCodename {
+                        Image("CodenameLogo")
+                            .resizable()
+                            .renderingMode(.template)
+                            .scaledToFit()
+                            .frame(width: 193, height: 26)
+                            .foregroundStyle(.primary)
+                            .accessibilityLabel("хуЯндекс Maple")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     AccountToolbarButton(isPresented: $showsAccount)
                 }
@@ -115,7 +136,9 @@ struct HomeView: View {
                     }
                 }
                 Spacer(minLength: 8)
-                if shelf.id == "my-wave", settings.configuration.kind == .yandex {
+                if shelf.id == "my-wave",
+                   settings.configuration.kind == .yandex,
+                   !developerSettings.usesNewShaderBasedWave {
                     Button { showsWaveSettings = true } label: {
                         Image(systemName: "slider.horizontal.3")
                             .frame(width: 44, height: 44)
@@ -129,13 +152,27 @@ struct HomeView: View {
             if shelf.id == "my-wave",
                developerSettings.usesNewShaderBasedWave,
                let firstTrack = shelf.tracks.first {
-                WaveLaunchButton(mood: waveSettings.configuration.moodEnergy) {
-                    Task { await player.play(firstTrack, queue: shelf.tracks) }
-                }
+                let isCurrentWaveTrack = shelf.tracks.contains { $0.id == player.currentTrack?.id }
+                WaveLaunchButton(
+                    artwork: player.currentTrack?.artwork ?? firstTrack.artwork,
+                    mood: waveSettings.configuration.moodEnergy,
+                    isPlaying: isCurrentWaveTrack && player.isPlaying,
+                    isBuffering: isCurrentWaveTrack && player.isBuffering,
+                    action: {
+                        if isCurrentWaveTrack {
+                            player.togglePlayback()
+                        } else {
+                            Task { await player.play(firstTrack, queue: shelf.tracks) }
+                        }
+                    },
+                    settingsAction: { showsWaveSettings = true }
+                )
                 .padding(.horizontal)
             }
 
-            if shelf.layout == .cards {
+            if shelf.id == "my-wave", developerSettings.usesNewShaderBasedWave {
+                EmptyView()
+            } else if shelf.layout == .cards {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 14) {
                         ForEach(shelf.tracks) { track in
