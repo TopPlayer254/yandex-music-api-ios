@@ -1,4 +1,4 @@
-# Verification — 2026-09-08
+# Verification — 2026-09-09
 
 ## Executed locally (Windows)
 
@@ -13,18 +13,19 @@
 
 ## Executed in GitHub Actions
 
-- [Workflow run #12](https://github.com/TopPlayer254/yandex-music-api-ios/actions/runs/34251858492)
+- [Workflow run #13](https://github.com/TopPlayer254/yandex-music-api-ios/actions/runs/34384010804)
   used Xcode 26.3 and generated the project with XcodeGen 2.46.0.
 - `xcodebuild test` compiled and passed the XCTest suite on an available iPhone simulator.
   The workflow now discovers a registered simulator instead of assuming one fixed device; if a runner
   exposes only the Simulator SDK, it falls back to `build-for-testing` before the device archive.
-- `xcodebuild archive` produced an unsigned arm64 device archive after compiling the new
-  theme, My Wave settings, localized Yandex diagnostics and restored sheet player.
+- `xcodebuild archive` produced an unsigned arm64 device archive after compiling the bounded
+  artwork backdrop, dynamic mini-player accessory, immediate playback selection path and the
+  SwiftUI/Metal metaball Wave control. The IPA contains `default.metallib`.
 - The archive was packaged as `dist/MapleMusic-unsigned.ipa`; local SHA-256:
-  `d58d7e792d7b6580e927ad80a06a6e5bcdfed5e92c7b0b8001ddc7fa744fb9bd`.
+  `584d4799eea2141573e63f7b472b29095d28790585dd3a6f3a7dbcae11ece55b`.
 - The IPA structure contains `Payload/MapleMusic.app/Info.plist` and no
   `embedded.mobileprovision` or `_CodeSignature` entry.
-- The packaged app reports bundle ID `com.hikeri.yamusic`, version `0.9.0`, build `12`,
+- The packaged app reports bundle ID `com.hikeri.yamusic`, version `0.9.1`, build `13`,
   `UIFileSharingEnabled = true`, and `LSSupportsOpeningDocumentsInPlace = true`.
 - Its iPhone orientation list contains only `UIInterfaceOrientationPortrait`; iPad retains
   portrait and landscape orientations.
@@ -34,7 +35,8 @@
 No Swift/iOS SDK or macOS runtime is available locally. The cloud job performed Swift type checking,
 XCTest execution on a concrete simulator, and a device archive.
 Actual-device login, authenticated catalogue/playback/lossless requests, audio decoding, background
-playback and download/relaunch UI checks still require manual testing with the user's account.
+playback, applying Rotor settings against the live account, shader appearance and download/relaunch
+UI checks still require manual testing with the user's account.
 
 XCTest target includes mixed-type API IDs and Cyrillic metadata, LRC offset/multiple tags,
 an AES-CTR known-answer vector, account isolation and offline metadata persistence,
