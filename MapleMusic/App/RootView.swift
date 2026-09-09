@@ -14,7 +14,7 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.1, *) {
                 ModernTabs(selection: $selection)
             } else {
                 LegacyTabs(selection: $selection)
@@ -51,7 +51,7 @@ struct RootView: View {
     }
 }
 
-@available(iOS 26.0, *)
+@available(iOS 26.1, *)
 private struct ModernTabs: View {
     @EnvironmentObject private var player: PlayerStore
     @Binding var selection: AppTab
@@ -59,7 +59,7 @@ private struct ModernTabs: View {
     var body: some View {
         tabs
             .tabBarMinimizeBehavior(.onScrollDown)
-            .tabViewBottomAccessory {
+            .tabViewBottomAccessory(isEnabled: player.currentTrack != nil) {
                 if let track = player.currentTrack {
                     ModernMiniPlayer(track: track)
                 }
@@ -121,7 +121,7 @@ private struct LegacyTabContent<Content: View>: View {
     }
 }
 
-@available(iOS 26.0, *)
+@available(iOS 26.1, *)
 private struct ModernMiniPlayer: View {
     @Environment(\.tabViewBottomAccessoryPlacement) private var placement
     @EnvironmentObject private var player: PlayerStore

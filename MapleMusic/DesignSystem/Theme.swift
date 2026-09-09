@@ -369,22 +369,29 @@ struct AccountToolbarButton: View {
 
     var body: some View {
         Button { isPresented = true } label: {
-            switch auth.state {
-            case let .signedIn(profile):
-                AsyncImage(url: profile.avatarURL) { phase in
-                    if case let .success(image) = phase {
-                        image.resizable().scaledToFill()
-                    } else {
-                        Image(systemName: "person.crop.circle.fill")
+            ZStack {
+                Circle()
+                    .fill(.quaternary)
+                switch auth.state {
+                case let .signedIn(profile):
+                    AsyncImage(url: profile.avatarURL) { phase in
+                        if case let .success(image) = phase {
+                            image.resizable().scaledToFill()
+                        } else {
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.title2)
+                        }
                     }
+                default:
+                    Image(systemName: "person.crop.circle")
+                        .font(.title2)
                 }
-                .frame(width: 30, height: 30)
-                .clipShape(Circle())
-            default:
-                Image(systemName: "person.crop.circle")
-                    .font(.title2)
             }
+            .frame(width: 30, height: 30)
+            .clipShape(Circle())
+            .contentShape(Circle())
         }
+        .buttonBorderShape(.circle)
         .accessibilityLabel("Учётная запись")
     }
 }

@@ -4,6 +4,7 @@ import SwiftUI
 struct MapleMusicApp: App {
     @StateObject private var settings = ProviderSettings()
     @StateObject private var appearance = AppearanceSettings()
+    @StateObject private var developerSettings = DeveloperSettings()
 
     var body: some Scene {
         WindowGroup {
@@ -11,6 +12,7 @@ struct MapleMusicApp: App {
                 .id(settings.generation)
                 .environmentObject(settings)
                 .environmentObject(appearance)
+                .environmentObject(developerSettings)
         }
     }
 }

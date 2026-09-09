@@ -6,6 +6,7 @@ struct WaveSettingsView: View {
     @EnvironmentObject private var settings: WaveSettings
     @State private var draft = WaveConfiguration()
     @State private var isApplying = false
+    @State private var didLoadDraft = false
 
     var body: some View {
         NavigationStack {
@@ -51,17 +52,24 @@ struct WaveSettingsView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Применить") {
-                        settings.configuration = draft
+                        let configuration = draft
                         isApplying = true
                         Task {
-                            if await catalog.applyWaveSettings(draft) { dismiss() }
+                            if await catalog.applyWaveSettings(configuration) {
+                                settings.configuration = configuration
+                                dismiss()
+                            }
                             isApplying = false
                         }
                     }
                     .disabled(isApplying)
                 }
             }
-            .onAppear { draft = settings.configuration }
+            .onAppear {
+                guard !didLoadDraft else { return }
+                didLoadDraft = true
+                draft = settings.configuration
+            }
         }
     }
 }

@@ -5,6 +5,8 @@ struct HomeView: View {
     @EnvironmentObject private var player: PlayerStore
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var settings: ProviderSettings
+    @EnvironmentObject private var waveSettings: WaveSettings
+    @EnvironmentObject private var developerSettings: DeveloperSettings
     @State private var showsAccount = false
     @State private var showsWaveSettings = false
 
@@ -123,6 +125,15 @@ struct HomeView: View {
                 }
             }
             .padding(.horizontal)
+
+            if shelf.id == "my-wave",
+               developerSettings.usesNewShaderBasedWave,
+               let firstTrack = shelf.tracks.first {
+                WaveLaunchButton(mood: waveSettings.configuration.moodEnergy) {
+                    Task { await player.play(firstTrack, queue: shelf.tracks) }
+                }
+                .padding(.horizontal)
+            }
 
             if shelf.layout == .cards {
                 ScrollView(.horizontal, showsIndicators: false) {

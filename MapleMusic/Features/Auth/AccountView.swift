@@ -93,6 +93,19 @@ struct AccountView: View {
                         )
                     }
                 }
+
+                Section {
+                    NavigationLink {
+                        DeveloperSettingsView()
+                    } label: {
+                        SettingsDestinationLabel(
+                            title: "Разработчик",
+                            subtitle: "Экспериментальные функции",
+                            systemImage: "hammer.fill",
+                            color: .gray
+                        )
+                    }
+                }
             }
             .navigationTitle("Настройки")
             .toolbar {
@@ -114,6 +127,25 @@ struct AccountView: View {
     private func switchToYandex() {
         player.stop()
         try? settings.apply(ProviderConfiguration())
+    }
+}
+
+private struct DeveloperSettingsView: View {
+    @EnvironmentObject private var developerSettings: DeveloperSettings
+
+    var body: some View {
+        List {
+            Section {
+                Toggle(
+                    "Use new shader-based wave toggle",
+                    isOn: $developerSettings.usesNewShaderBasedWave
+                )
+            } footer: {
+                Text("Включает на главной экспериментальную кнопку «Моей волны» с анимированными metaballs и палитрой выбранного настроения.")
+            }
+        }
+        .navigationTitle("Разработчик")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

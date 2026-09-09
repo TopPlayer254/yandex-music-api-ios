@@ -103,12 +103,23 @@ actor YandexMusicService: MusicService {
     }
 
     func setWaveSettings(_ settings: WaveConfiguration) async throws {
-        _ = try await request("rotor/station/user:onyourwave/settings3", form: [
+        let values = [
             "moodEnergy": settings.moodEnergy.rawValue,
             "diversity": settings.diversity.rawValue,
             "language": settings.language.rawValue,
             "type": "rotor",
-        ])
+        ]
+        do {
+            _ = try await request("rotor/station/user:onyourwave/settings3", jsonBody: values)
+        } catch let error as MusicServiceError where error == .http(415) {
+            // Some API deployments still expose the form-encoded variant used
+            // by the reference client. Retry it without an Android client hint.
+            _ = try await request(
+                "rotor/station/user:onyourwave/settings3",
+                form: values,
+                includesClientHeader: false
+            )
+        }
     }
 
     func search(query: String) async throws -> MusicSearchResults {
@@ -393,7 +404,13 @@ actor YandexMusicService: MusicService {
     private static func isPromotionTitle(_ title: String) -> Bool {
         title.localizedCaseInsensitiveCompare("Промокод Upgrade") == .orderedSame
     }
-    private func request(_ path: String, query: [String: String] = [:], form: [String: String]? = nil) async throws -> YandexJSON {
+    private func request(
+        _ path: String,
+        query: [String: String] = [:],
+        form: [String: String]? = nil,
+        jsonBody: [String: String]? = nil,
+        includesClientHeader: Bool = true
+    ) async throws -> YandexJSON {
         guard let token = await token(), !token.isEmpty else { throw MusicServiceError.unauthorized }
         var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false)!
         components.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
@@ -402,17 +419,21 @@ actor YandexMusicService: MusicService {
         request.timeoutInterval = 30
         request.setValue("OAuth \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("MapleMusic/0.8.1", forHTTPHeaderField: "User-Agent")
+        request.setValue("MapleMusic/0.9.1", forHTTPHeaderField: "User-Agent")
         if path == "get-file-info" {
             request.setValue("YandexMusicDesktopAppWindows/5.0.0", forHTTPHeaderField: "X-Yandex-Music-Client")
             request.setValue("new", forHTTPHeaderField: "X-Yandex-Music-Frontend")
             request.setValue("1", forHTTPHeaderField: "X-Yandex-Music-Without-Invocation-Info")
-        } else {
+        } else if includesClientHeader {
             // Account, library, search and rotor requests follow the Android
             // client used by the device-flow token and the reference library.
             request.setValue("YandexMusicAndroid/24023621", forHTTPHeaderField: "X-Yandex-Music-Client")
         }
-        if let form {
+        if let jsonBody {
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: jsonBody, options: [.sortedKeys])
+        } else if let form {
             request.httpMethod = "POST"
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
             let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))

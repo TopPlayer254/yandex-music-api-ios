@@ -335,36 +335,48 @@ private struct ArtworkBackdrop: View {
 
     var body: some View {
         let displayedImage = image ?? artwork?.url.flatMap { ArtworkImageCache.shared.cachedImage(for: $0) }
-        ZStack {
-            Color.black
-            if let displayedImage {
-                Image(uiImage: displayedImage)
-                    .resizable()
-                    .scaledToFill()
-                    .scaleEffect(drifts ? 1.22 : 1.08)
-                    .offset(x: drifts ? 22 : -18, y: drifts ? -16 : 18)
-                    .saturation(1.12)
-                    .blur(radius: 62, opaque: true)
-            } else {
-                Color(uiColor: .systemGray5)
+        GeometryReader { proxy in
+            ZStack {
+                Color.black
+                if let displayedImage {
+                    Image(uiImage: displayedImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .clipped()
+                        .scaleEffect(drifts ? 1.22 : 1.08)
+                        .offset(x: drifts ? 22 : -18, y: drifts ? -16 : 18)
+                        .saturation(1.12)
+                        .blur(radius: 62, opaque: true)
+                } else {
+                    Color(uiColor: .systemGray5)
+                }
+                Color.black.opacity(0.32)
             }
-            Color.black.opacity(0.32)
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
         }
         .ignoresSafeArea()
-        .clipped()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
         .onAppear {
             withAnimation(.easeInOut(duration: 14).repeatForever(autoreverses: true)) {
                 drifts = true
             }
         }
         .task(id: artwork?.url) {
-            guard let url = artwork?.url else { return }
+            guard let url = artwork?.url else {
+                image = nil
+                return
+            }
             if let cached = ArtworkImageCache.shared.cachedImage(for: url) {
                 image = cached
                 return
             }
             image = nil
-            image = await ArtworkImageCache.shared.image(for: url)
+            let loadedImage = await ArtworkImageCache.shared.image(for: url)
+            guard !Task.isCancelled, artwork?.url == url else { return }
+            image = loadedImage
         }
     }
 }

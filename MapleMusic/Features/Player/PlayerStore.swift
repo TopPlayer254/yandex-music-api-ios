@@ -115,8 +115,12 @@ final class PlayerStore: ObservableObject {
         }
         let identifier = UUID()
         requestID = identifier
-        isBuffering = true
-        errorMessage = nil
+        if recoveryAttempt == 0 {
+            beginPlaybackSelection(track, queue: proposedQueue)
+        } else {
+            isBuffering = true
+            errorMessage = nil
+        }
         var preparedFile: URL?
         do {
             let asset: PlaybackAsset
@@ -150,9 +154,6 @@ final class PlayerStore: ObservableObject {
                 return
             }
 
-            player.pause()
-            player.replaceCurrentItem(with: nil)
-            if let playbackFile { try? FileManager.default.removeItem(at: playbackFile) }
             playbackFile = preparedFile
             resolvedAsset = asset
             if let proposedQueue, !proposedQueue.isEmpty {
@@ -161,10 +162,6 @@ final class PlayerStore: ObservableObject {
                 queue = [track]
             }
             currentTrack = track
-            duration = track.duration
-            currentTime = 0
-            lyrics = nil
-            loadNowPlayingArtwork(for: track)
 
             let item = AVPlayerItem(asset: mediaAsset)
             itemStatus = item.observe(\.status, options: [.new]) { [weak self] observed, _ in
@@ -228,6 +225,29 @@ final class PlayerStore: ObservableObject {
             errorMessage = error.localizedDescription
             updateNowPlayingInfo()
         }
+    }
+
+    private func beginPlaybackSelection(_ track: Track, queue proposedQueue: [Track]?) {
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        itemStatus = nil
+        if let playbackFile { try? FileManager.default.removeItem(at: playbackFile) }
+        playbackFile = nil
+        resolvedAsset = nil
+        isPlaying = false
+        isBuffering = true
+        errorMessage = nil
+        if let proposedQueue, !proposedQueue.isEmpty {
+            queue = proposedQueue
+        } else if !queue.contains(where: { $0.id == track.id }) {
+            queue = [track]
+        }
+        currentTrack = track
+        duration = track.duration
+        currentTime = 0
+        lyrics = nil
+        loadNowPlayingArtwork(for: track)
+        updateNowPlayingInfo()
     }
 
     func stop() {
