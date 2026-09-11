@@ -14,7 +14,6 @@ struct WaveLaunchButton: View {
     @State private var usesDarkForeground = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 32, style: .continuous)
         ZStack {
             WaveArtworkSurface(image: artworkImage, mood: mood)
 
@@ -56,9 +55,6 @@ struct WaveLaunchButton: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 370)
-        .background(Color.black, in: shape)
-        .clipShape(shape)
-        .contentShape(shape)
         .task(id: artwork.url) {
             await loadArtwork()
         }
@@ -119,43 +115,46 @@ private struct WaveArtworkSurface: View {
     var body: some View {
         let palette = palette
         GeometryReader { proxy in
-            ZStack {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reducesMotion)) { timeline in
+              ZStack {
+                Rectangle()
+                    .fill(.white)
+                    .colorEffect(
+                        ShaderLibrary.mapleWaveAura(
+                            .float2(proxy.size.width, proxy.size.height),
+                            .float(reducesMotion ? 0 : animationTime(timeline.date)),
+                            .color(palette.primary),
+                            .color(palette.secondary),
+                            .color(palette.tertiary)
+                        )
+                    )
                 if let image {
-                    artwork(image, size: proxy.size)
-                    Color.black.opacity(0.12)
-                    TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reducesMotion)) { timeline in
                         artwork(image, size: proxy.size)
                             .layerEffect(
                                 ShaderLibrary.mapleWaveGlass(
                                     .float2(proxy.size.width, proxy.size.height),
-                                    .float(animationTime(timeline.date)),
+                                    .float(reducesMotion ? 0 : animationTime(timeline.date)),
                                     .color(palette.primary),
                                     .color(palette.secondary),
                                     .color(palette.tertiary)
                                 ),
                                 maxSampleOffset: CGSize(width: 24, height: 24)
                             )
-                    }
                 } else {
-                    LinearGradient(
-                        colors: [.black, palette.primary.opacity(0.24), .black],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reducesMotion)) { timeline in
                         Rectangle()
                             .fill(.white)
                             .colorEffect(
                                 ShaderLibrary.mapleWaveMetaballs(
                                     .float2(proxy.size.width, proxy.size.height),
-                                    .float(animationTime(timeline.date)),
+                                    .float(reducesMotion ? 0 : animationTime(timeline.date)),
                                     .color(palette.primary),
                                     .color(palette.secondary),
                                     .color(palette.tertiary)
                                 )
                             )
-                    }
                 }
+              }
+              .frame(width: proxy.size.width, height: proxy.size.height)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipped()
@@ -179,7 +178,7 @@ private struct WaveArtworkSurface: View {
     private var palette: (primary: Color, secondary: Color, tertiary: Color) {
         switch mood {
         case .all:
-            (.yellow, .pink, .blue)
+            (.purple, .pink, .indigo)
         case .fun:
             (.orange, .pink, .yellow)
         case .active:
