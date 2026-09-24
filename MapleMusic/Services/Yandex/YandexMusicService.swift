@@ -102,6 +102,15 @@ actor YandexMusicService: MusicService {
         return HomeFeed(greeting: "Слушать сейчас", featured: Array(tracks.prefix(5)), shelves: shelves)
     }
 
+    func nextWaveTracks(after trackID: String) async throws -> [Track] {
+        let id = try trackIdentifier(trackID)
+        let result = try await request("rotor/station/user:onyourwave/tracks", query: [
+            "settings2": "true", "queue": id,
+        ])
+        return result["sequence"].array.compactMap { $0["track"].track() }
+            .filter { !Self.isPromotionTrack($0) }
+    }
+
     func setWaveSettings(_ settings: WaveConfiguration) async throws {
         let values = [
             "moodEnergy": settings.moodEnergy.rawValue,
@@ -267,14 +276,37 @@ actor YandexMusicService: MusicService {
         let id = try trackIdentifier(track.id)
         let timestamp = String(Int(Date().timeIntervalSince1970))
         do {
-            let result = try await request("tracks/\(id)/lyrics", query: ["format": "LRC", "timeStamp": timestamp,
-                "sign": Self.sign(id + timestamp)])
-            guard let raw = result["downloadUrl"].string, let url = URL(string: raw), url.scheme == "https" else { return nil }
+            let durationMS = String(max(0, Int((track.duration * 1000).rounded())))
+            let result = try await request("tracks/\(id)/lyrics", query: [
+                "format": "LRC", "durationMs": durationMS, "timeStamp": timestamp,
+                "sign": Self.sign(id + timestamp),
+            ])
+            guard let raw = result["downloadUrl"].string, let url = URL(string: raw), url.scheme == "https" else {
+                return try await supplementLyrics(id: id, track: track)
+            }
             let (data, response) = try await session.data(from: url)
             try Self.validate(response)
             guard let text = String(data: data, encoding: .utf8) else { throw MusicServiceError.invalidResponse }
-            return Lyrics(trackID: track.id, writers: result["writers"].array.compactMap(\.string).joined(separator: ", "), lines: LRCParser.parse(text))
-        } catch MusicServiceError.http(404) { return nil }
+            let lines = LRCParser.parse(text)
+            if !lines.isEmpty {
+                return Lyrics(trackID: track.id, writers: result["writers"].array.compactMap(\.string).joined(separator: ", "), lines: lines)
+            }
+        } catch is CancellationError { throw CancellationError() }
+        catch { /* Signed lyrics can return 403; try the public supplement. */ }
+        return try await supplementLyrics(id: id, track: track)
+    }
+
+    private func supplementLyrics(id: String, track: Track) async throws -> Lyrics? {
+        let result = try await request("tracks/\(id)/supplement")
+        let value = result["lyrics"]["fullLyrics"].string ?? result["lyrics"]["lyrics"].string
+        guard let value, !value.isEmpty else { return nil }
+        let cleaned = value.replacingOccurrences(of: #"\[[^\]]*\]"#, with: "", options: .regularExpression)
+        let lines = cleaned.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .map { LyricsLine(time: 0, text: $0) }
+        guard !lines.isEmpty else { return nil }
+        return Lyrics(trackID: track.id, writers: nil, lines: lines, isSynchronized: false, source: "Яндекс Музыка")
     }
 
     private func legacyAsset(id: String, track: Track, quality: AudioQuality) async throws -> PlaybackAsset {

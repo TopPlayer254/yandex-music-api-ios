@@ -2,6 +2,7 @@ import Foundation
 
 protocol MusicService: Sendable {
     func home() async throws -> HomeFeed
+    func nextWaveTracks(after trackID: String) async throws -> [Track]
     func setWaveSettings(_ settings: WaveConfiguration) async throws
     func search(query: String) async throws -> MusicSearchResults
     func album(id: String) async throws -> Album
@@ -18,6 +19,7 @@ protocol MusicService: Sendable {
 
 struct AnyMusicService: MusicService {
     private let _home: @Sendable () async throws -> HomeFeed
+    private let _nextWaveTracks: @Sendable (String) async throws -> [Track]
     private let _setWaveSettings: @Sendable (WaveConfiguration) async throws -> Void
     private let _search: @Sendable (String) async throws -> MusicSearchResults
     private let _album: @Sendable (String) async throws -> Album
@@ -33,6 +35,7 @@ struct AnyMusicService: MusicService {
 
     init<Service: MusicService>(_ service: Service) {
         _home = service.home
+        _nextWaveTracks = service.nextWaveTracks
         _setWaveSettings = service.setWaveSettings
         _search = service.search
         _album = service.album
@@ -48,6 +51,7 @@ struct AnyMusicService: MusicService {
     }
 
     func home() async throws -> HomeFeed { try await _home() }
+    func nextWaveTracks(after trackID: String) async throws -> [Track] { try await _nextWaveTracks(trackID) }
     func setWaveSettings(_ settings: WaveConfiguration) async throws { try await _setWaveSettings(settings) }
     func search(query: String) async throws -> MusicSearchResults { try await _search(query) }
     func album(id: String) async throws -> Album { try await _album(id) }
@@ -60,4 +64,8 @@ struct AnyMusicService: MusicService {
     func setFavorite(trackID: String, isFavorite: Bool) async throws { try await _setFavorite(trackID, isFavorite) }
     func playbackAsset(for track: Track, quality: AudioQuality) async throws -> PlaybackAsset { try await _playback(track, quality) }
     func lyrics(for track: Track) async throws -> Lyrics? { try await _lyrics(track) }
+}
+
+extension MusicService {
+    func nextWaveTracks(after trackID: String) async throws -> [Track] { [] }
 }

@@ -7,6 +7,7 @@ final class CatalogStore: ObservableObject {
     @Published private(set) var home: HomeFeed?
     @Published private(set) var library: MusicLibrary?
     @Published private(set) var searchResults = MusicSearchResults()
+    @Published private(set) var localSearchTracks: [Track] = []
     @Published private(set) var isLoading = false
     @Published private(set) var isSearching = false
     @Published private(set) var homeErrorMessage: String?
@@ -83,12 +84,24 @@ final class CatalogStore: ObservableObject {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             searchResults = MusicSearchResults()
+            localSearchTracks = []
             searchErrorMessage = nil
             isSearching = false
             return
         }
         isSearching = true
         searchTask = Task {
+            let downloadedEntries = await offlineStore.entries()
+            let downloaded = downloadedEntries.compactMap(\.track)
+            guard !Task.isCancelled else { return }
+            var seen = Set<String>()
+            localSearchTracks = ((library?.liked ?? []) + downloaded)
+                .filter { seen.insert($0.id).inserted }
+                .filter { track in
+                    track.title.localizedCaseInsensitiveContains(trimmed)
+                        || track.artist.name.localizedCaseInsensitiveContains(trimmed)
+                        || track.albumTitle.localizedCaseInsensitiveContains(trimmed)
+                }
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             do {

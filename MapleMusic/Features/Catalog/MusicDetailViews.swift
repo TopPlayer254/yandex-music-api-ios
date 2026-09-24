@@ -143,7 +143,6 @@ struct AlbumDetailView: View {
                 } label: {
                     Label("Воспроизвести", systemImage: "play.fill")
                         .frame(maxWidth: .infinity)
-                        .foregroundStyle(.white)
                 }
                 .tint(appearance.tint)
                 .adaptiveProminentButtonStyle()

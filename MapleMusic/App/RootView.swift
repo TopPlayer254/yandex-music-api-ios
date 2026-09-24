@@ -69,10 +69,10 @@ private struct ModernTabs: View {
 
     private var tabs: some View {
         TabView(selection: $selection) {
-            Tab("Главная", systemImage: "house.fill", value: AppTab.home) {
+            Tab("Главная", systemImage: selection == .home ? "house.fill" : "house", value: AppTab.home) {
                 HomeView()
             }
-            Tab("Медиатека", systemImage: "square.stack.fill", value: AppTab.library) {
+            Tab("Медиатека", systemImage: selection == .library ? "square.stack.fill" : "square.stack", value: AppTab.library) {
                 LibraryView()
             }
             Tab("Поиск", systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
@@ -88,11 +88,11 @@ private struct LegacyTabs: View {
     var body: some View {
         TabView(selection: $selection) {
             LegacyTabContent { HomeView() }
-                .tabItem { Label("Главная", systemImage: "house.fill") }
+                .tabItem { Label("Главная", systemImage: selection == .home ? "house.fill" : "house") }
                 .tag(AppTab.home)
 
             LegacyTabContent { LibraryView() }
-                .tabItem { Label("Медиатека", systemImage: "square.stack.fill") }
+                .tabItem { Label("Медиатека", systemImage: selection == .library ? "square.stack.fill" : "square.stack") }
                 .tag(AppTab.library)
 
             LegacyTabContent { SearchView() }
@@ -128,6 +128,7 @@ private struct ModernMiniPlayer: View {
     let track: Track
 
     var body: some View {
+        Group {
         if placement == .inline {
             HStack(spacing: 8) {
                 Button { showNowPlaying() } label: {
@@ -180,6 +181,15 @@ private struct ModernMiniPlayer: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
         }
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 24).onEnded { value in
+                guard abs(value.translation.width) > 55,
+                      abs(value.translation.width) > abs(value.translation.height) else { return }
+                if value.translation.width < 0 { player.next() }
+                else { player.previous() }
+            }
+        )
     }
 
     private func playbackButton(size: CGFloat) -> some View {
@@ -249,5 +259,13 @@ private struct LegacyMiniPlayer: View {
         .adaptiveGlass(in: RoundedRectangle(cornerRadius: 15, style: .continuous), interactive: true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Сейчас играет \(track.title), \(track.artist.name)")
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 24).onEnded { value in
+                guard abs(value.translation.width) > 55,
+                      abs(value.translation.width) > abs(value.translation.height) else { return }
+                if value.translation.width < 0 { player.next() }
+                else { player.previous() }
+            }
+        )
     }
 }

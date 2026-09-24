@@ -154,6 +154,7 @@ struct HomeView: View {
                let firstTrack = shelf.tracks.first {
                 let isCurrentWaveTrack = shelf.tracks.contains { $0.id == player.currentTrack?.id }
                 WaveLaunchButton(
+                    motion: player.waveMotion,
                     artwork: player.currentTrack?.artwork ?? firstTrack.artwork,
                     mood: waveSettings.configuration.moodEnergy,
                     isPlaying: isCurrentWaveTrack && player.isPlaying,
@@ -162,7 +163,7 @@ struct HomeView: View {
                         if isCurrentWaveTrack {
                             player.togglePlayback()
                         } else {
-                            Task { await player.play(firstTrack, queue: shelf.tracks) }
+                            Task { await player.startWave(firstTrack, queue: shelf.tracks) }
                         }
                     },
                     settingsAction: { showsWaveSettings = true }
@@ -194,7 +195,7 @@ struct HomeView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(shelf.tracks) { track in
-                        CompactTrackRow(track: track, queue: shelf.tracks)
+                        CompactTrackRow(track: track, queue: shelf.tracks, isWave: shelf.id == "my-wave")
                         if track.id != shelf.tracks.last?.id { Divider().padding(.leading, 76) }
                     }
                 }
@@ -235,9 +236,15 @@ private struct CompactTrackRow: View {
     @EnvironmentObject private var player: PlayerStore
     let track: Track
     let queue: [Track]
+    let isWave: Bool
 
     var body: some View {
-        Button { Task { await player.play(track, queue: queue) } } label: {
+        Button {
+            Task {
+                if isWave { await player.startWave(track, queue: queue) }
+                else { await player.play(track, queue: queue) }
+            }
+        } label: {
             HStack(spacing: 12) {
                 ArtworkView(artwork: track.artwork, cornerRadius: 7).frame(width: 52, height: 52)
                 VStack(alignment: .leading, spacing: 3) {

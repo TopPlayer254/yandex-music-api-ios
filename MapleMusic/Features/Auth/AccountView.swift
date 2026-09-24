@@ -63,7 +63,7 @@ struct AccountView: View {
                     } label: {
                         SettingsDestinationLabel(
                             title: "Тексты песен",
-                            subtitle: lyricsSettings.hasGeniusToken ? "Яндекс + Genius" : "Яндекс",
+                            subtitle: lyricsSettings.hasGeniusToken ? "Яндекс · LRCLIB · Genius" : "Яндекс · LRCLIB",
                             systemImage: "quote.bubble.fill",
                             color: .orange
                         )
@@ -188,7 +188,7 @@ private struct AppearanceSettingsView: View {
             }
 
             Section("Акцентный цвет") {
-                ForEach(AccentColorChoice.allCases) { option in
+                ForEach(AccentColorChoice.allCases.filter { $0 != .custom }) { option in
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             appearance.accent = option
@@ -210,6 +210,25 @@ private struct AppearanceSettingsView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                }
+                Button {
+                    appearance.accent = .custom
+                } label: {
+                    HStack(spacing: 12) {
+                        Circle().fill(Color(red: appearance.customRed, green: appearance.customGreen, blue: appearance.customBlue))
+                            .frame(width: 24, height: 24)
+                        Text("Свой цвет").foregroundStyle(.primary)
+                        Spacer()
+                        if appearance.accent == .custom {
+                            Image(systemName: "checkmark").foregroundStyle(appearance.tint)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                if appearance.accent == .custom {
+                    HStack { Text("Красный"); Slider(value: $appearance.customRed, in: 0...1) }
+                    HStack { Text("Зелёный"); Slider(value: $appearance.customGreen, in: 0...1) }
+                    HStack { Text("Синий"); Slider(value: $appearance.customBlue, in: 0...1) }
                 }
             }
 
@@ -349,7 +368,7 @@ private struct LyricsSettingsView: View {
                 Toggle("Использовать Genius как резерв", isOn: $settings.usesGeniusFallback)
                     .disabled(!settings.hasGeniusToken)
             } footer: {
-                Text("Сначала приложение запрашивает синхронизированный текст у музыкального сервиса. Genius используется только если основной текст недоступен.")
+                Text("Сначала приложение запрашивает текст у музыкального сервиса, затем у LRCLIB. Genius с вашим ключом используется последним резервом.")
             }
 
             Section("Genius API") {

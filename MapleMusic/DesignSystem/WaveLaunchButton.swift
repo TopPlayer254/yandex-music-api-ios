@@ -3,6 +3,7 @@ import SwiftUI
 import UIKit
 
 struct WaveLaunchButton: View {
+    @ObservedObject var motion: WaveMotionStore
     let artwork: Artwork
     let mood: WaveMoodEnergy
     let isPlaying: Bool
@@ -15,7 +16,7 @@ struct WaveLaunchButton: View {
 
     var body: some View {
         ZStack {
-            WaveArtworkSurface(image: artworkImage, mood: mood)
+            WaveArtworkSurface(image: artworkImage, mood: mood, intensity: isPlaying ? motion.level : 0)
 
             Button(action: action) {
                 HStack(spacing: 13) {
@@ -111,6 +112,7 @@ private struct WaveArtworkSurface: View {
     @Environment(\.accessibilityReduceMotion) private var reducesMotion
     let image: UIImage?
     let mood: WaveMoodEnergy
+    let intensity: Float
 
     var body: some View {
         let palette = palette
@@ -123,6 +125,7 @@ private struct WaveArtworkSurface: View {
                         ShaderLibrary.mapleWaveAura(
                             .float2(proxy.size.width, proxy.size.height),
                             .float(reducesMotion ? 0 : animationTime(timeline.date)),
+                            .float(reducesMotion ? 0 : intensity),
                             .color(palette.primary),
                             .color(palette.secondary),
                             .color(palette.tertiary)
@@ -134,6 +137,7 @@ private struct WaveArtworkSurface: View {
                                 ShaderLibrary.mapleWaveGlass(
                                     .float2(proxy.size.width, proxy.size.height),
                                     .float(reducesMotion ? 0 : animationTime(timeline.date)),
+                                    .float(reducesMotion ? 0 : intensity),
                                     .color(palette.primary),
                                     .color(palette.secondary),
                                     .color(palette.tertiary)
@@ -147,6 +151,7 @@ private struct WaveArtworkSurface: View {
                                 ShaderLibrary.mapleWaveMetaballs(
                                     .float2(proxy.size.width, proxy.size.height),
                                     .float(reducesMotion ? 0 : animationTime(timeline.date)),
+                                    .float(reducesMotion ? 0 : intensity),
                                     .color(palette.primary),
                                     .color(palette.secondary),
                                     .color(palette.tertiary)

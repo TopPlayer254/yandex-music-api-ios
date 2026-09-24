@@ -10,6 +10,24 @@ struct SearchView: View {
     var body: some View {
         NavigationStack {
             List {
+                if !catalog.localSearchTracks.isEmpty {
+                    Section("В вашей музыке") {
+                        ForEach(catalog.localSearchTracks) { track in
+                            TrackRow(
+                                track: track,
+                                isDownloaded: downloads.isDownloaded(track),
+                                isDownloading: downloads.activeTrackIDs.contains(track.id),
+                                play: { Task { await player.play(track, queue: catalog.localSearchTracks) } },
+                                toggleDownload: {
+                                    Task {
+                                        if downloads.isDownloaded(track) { await downloads.remove(track) }
+                                        else { await downloads.download(track, quality: player.preferredQuality) }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
                 if !catalog.searchResults.artists.isEmpty {
                     Section("Исполнители") {
                         ForEach(catalog.searchResults.artists) { artist in
@@ -66,11 +84,11 @@ struct SearchView: View {
             }
             .sheet(isPresented: $showsAccount) { AccountView() }
             .overlay {
-                if catalog.isSearching {
+                if catalog.isSearching && catalog.localSearchTracks.isEmpty && catalog.searchResults.isEmpty {
                     SearchLoadingPlaceholder()
                 } else if query.isEmpty {
                     ContentUnavailableView("Найдите свою музыку", systemImage: "magnifyingglass", description: Text("Ищите по треку, артисту или альбому."))
-                } else if let error = catalog.searchErrorMessage {
+                } else if let error = catalog.searchErrorMessage, catalog.localSearchTracks.isEmpty {
                     ContentUnavailableView {
                         Label("Поиск не выполнен", systemImage: "exclamationmark.magnifyingglass")
                     } description: {
@@ -79,7 +97,7 @@ struct SearchView: View {
                         Button("Повторить") { catalog.scheduleSearch(query) }
                             .buttonStyle(.borderedProminent)
                     }
-                } else if catalog.searchResults.isEmpty {
+                } else if catalog.searchResults.isEmpty && catalog.localSearchTracks.isEmpty {
                     ContentUnavailableView.search(text: query)
                 }
             }

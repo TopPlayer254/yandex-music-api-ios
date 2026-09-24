@@ -11,6 +11,7 @@ final class LyricsSettings: ObservableObject {
 
     private let vault = GeniusTokenVault()
     private let client = GeniusLyricsClient()
+    private let lrclib = LRCLIBLyricsClient()
 
     init() {
         usesGeniusFallback = UserDefaults.standard.bool(forKey: "lyrics-genius-fallback")
@@ -51,6 +52,7 @@ final class LyricsSettings: ObservableObject {
     }
 
     func fallbackLyrics(for track: Track) async throws -> Lyrics? {
+        if let lyrics = try? await lrclib.lyrics(for: track), !lyrics.lines.isEmpty { return lyrics }
         guard usesGeniusFallback, let token = try await vault.load(), !token.isEmpty else { return nil }
         return try await client.lyrics(for: track, accessToken: token)
     }

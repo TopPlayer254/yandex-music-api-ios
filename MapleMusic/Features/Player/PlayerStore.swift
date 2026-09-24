@@ -13,6 +13,7 @@ final class PlayerStore: ObservableObject {
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var resolvedAsset: PlaybackAsset?
     @Published private(set) var lyrics: Lyrics?
+    @Published private(set) var lyricsErrorMessage: String?
     @Published var preferredQuality: AudioQuality {
         didSet { UserDefaults.standard.set(preferredQuality.rawValue, forKey: "preferred-quality") }
     }
@@ -24,10 +25,13 @@ final class PlayerStore: ObservableObject {
         }
     }
     @Published var repeatMode: RepeatMode = .off
-    @Published var isShuffling = false
+    @Published var isShuffling = false {
+        didSet { shuffledPlayedIDs = Set(playHistory.prefix(historyCursor + 1).map(\.id)) }
+    }
     @Published var isShowingNowPlaying = false
     @Published var errorMessage: String?
     @Published private(set) var isBuffering = false
+    let waveMotion = WaveMotionStore()
 
     private let service: AnyMusicService
     private let offlineStore: OfflineStore
@@ -38,6 +42,10 @@ final class PlayerStore: ObservableObject {
     private let networkMonitor = NWPathMonitor()
     private let networkQueue = DispatchQueue(label: "com.hikeri.yamusic.network-monitor")
     private var timeObserver: Any?
+    private var waveObserver: Any?
+    private let envelopeAnalyzer = AudioEnvelopeAnalyzer()
+    private var envelopeTask: Task<Void, Never>?
+    private var audioEnvelope: AudioEnvelope?
     private var endObserver: NSObjectProtocol?
     private var itemStatus: NSKeyValueObservation?
     private var requestID = UUID()
@@ -48,6 +56,12 @@ final class PlayerStore: ObservableObject {
     private var networkIsAvailable = true
     private var recoveryTask: Task<Void, Never>?
     private var pendingRecovery: PlaybackRecovery?
+    private var isWaveQueue = false
+    private var waveLoadingTask: Task<Void, Never>?
+    private var pendingWaveAdvance = false
+    private var playHistory: [Track] = []
+    private var historyCursor = -1
+    private var shuffledPlayedIDs = Set<String>()
 
     private struct PlaybackRecovery {
         let track: Track
@@ -85,12 +99,15 @@ final class PlayerStore: ObservableObject {
         if let timeObserver {
             player.removeTimeObserver(timeObserver)
         }
+        if let waveObserver { player.removeTimeObserver(waveObserver) }
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
         }
         networkMonitor.cancel()
         artworkTask?.cancel()
         recoveryTask?.cancel()
+        waveLoadingTask?.cancel()
+        envelopeTask?.cancel()
     }
 
     var progress: Double {
@@ -104,10 +121,24 @@ final class PlayerStore: ObservableObject {
     }
 
     func play(_ track: Track, queue proposedQueue: [Track]? = nil) async {
+        if proposedQueue != nil || !queue.contains(where: { $0.id == track.id }) {
+            isWaveQueue = false
+            waveLoadingTask?.cancel()
+            waveLoadingTask = nil
+            pendingWaveAdvance = false
+        }
         await play(track, queue: proposedQueue, recoveryAttempt: 0)
     }
 
-    private func play(_ track: Track, queue proposedQueue: [Track]?, recoveryAttempt: Int) async {
+    func startWave(_ track: Track, queue tracks: [Track]) async {
+        waveLoadingTask?.cancel()
+        waveLoadingTask = nil
+        isWaveQueue = true
+        pendingWaveAdvance = false
+        await play(track, queue: tracks, recoveryAttempt: 0)
+    }
+
+    private func play(_ track: Track, queue proposedQueue: [Track]?, recoveryAttempt: Int, recordHistory: Bool = true) async {
         if recoveryAttempt == 0 {
             recoveryTask?.cancel()
             recoveryTask = nil
@@ -116,7 +147,7 @@ final class PlayerStore: ObservableObject {
         let identifier = UUID()
         requestID = identifier
         if recoveryAttempt == 0 {
-            beginPlaybackSelection(track, queue: proposedQueue)
+            beginPlaybackSelection(track, queue: proposedQueue, recordHistory: recordHistory)
         } else {
             isBuffering = true
             errorMessage = nil
@@ -174,24 +205,21 @@ final class PlayerStore: ObservableObject {
                 }
             }
             player.replaceCurrentItem(with: item)
+            audioEnvelope = nil
+            envelopeTask?.cancel()
+            if playbackURL.isFileURL {
+                envelopeTask = Task { [weak self] in
+                    guard let self else { return }
+                    let analyzed = try? await self.envelopeAnalyzer.analyze(fileURL: playbackURL)
+                    guard !Task.isCancelled, self.requestID == identifier else { return }
+                    self.audioEnvelope = analyzed
+                }
+            }
             prepareAudioSession()
             player.play()
             isPlaying = true
             updateNowPlayingInfo()
-            Task {
-                let cached = await offlineStore.localLyrics(for: track.id)
-                let fetched: Lyrics?
-                if let cached {
-                    fetched = cached
-                } else if let serviceLyrics = try? await service.lyrics(for: track),
-                          !serviceLyrics.lines.isEmpty {
-                    fetched = serviceLyrics
-                } else {
-                    fetched = try? await lyricsSettings.fallbackLyrics(for: track)
-                }
-                guard requestID == identifier else { return }
-                lyrics = fetched
-            }
+            Task { await loadLyrics(for: track, requestID: identifier) }
             if downloadPreferences.automaticallyDownloadsPlayedTracks,
                track.downloadAllowed,
                !downloads.isDownloaded(track),
@@ -227,9 +255,12 @@ final class PlayerStore: ObservableObject {
         }
     }
 
-    private func beginPlaybackSelection(_ track: Track, queue proposedQueue: [Track]?) {
+    private func beginPlaybackSelection(_ track: Track, queue proposedQueue: [Track]?, recordHistory: Bool) {
         player.pause()
         player.replaceCurrentItem(with: nil)
+        envelopeTask?.cancel()
+        audioEnvelope = nil
+        waveMotion.reset()
         itemStatus = nil
         if let playbackFile { try? FileManager.default.removeItem(at: playbackFile) }
         playbackFile = nil
@@ -243,11 +274,21 @@ final class PlayerStore: ObservableObject {
             queue = [track]
         }
         currentTrack = track
+        if recordHistory {
+            if historyCursor + 1 < playHistory.count {
+                playHistory.removeSubrange((historyCursor + 1)..<playHistory.count)
+            }
+            playHistory.append(track)
+            historyCursor = playHistory.count - 1
+            shuffledPlayedIDs.insert(track.id)
+        }
         duration = track.duration
         currentTime = 0
         lyrics = nil
+        lyricsErrorMessage = nil
         loadNowPlayingArtwork(for: track)
         updateNowPlayingInfo()
+        refillWaveIfNeeded()
     }
 
     func stop() {
@@ -255,17 +296,28 @@ final class PlayerStore: ObservableObject {
         recoveryTask?.cancel()
         recoveryTask = nil
         pendingRecovery = nil
+        waveLoadingTask?.cancel()
+        waveLoadingTask = nil
+        isWaveQueue = false
+        pendingWaveAdvance = false
+        playHistory = []
+        historyCursor = -1
+        shuffledPlayedIDs = []
         artworkTask?.cancel()
         artworkTask = nil
         nowPlayingArtwork = nil
         player.pause()
         player.replaceCurrentItem(with: nil)
+        envelopeTask?.cancel()
+        audioEnvelope = nil
+        waveMotion.reset()
         itemStatus = nil
         isPlaying = false
         isBuffering = false
         currentTrack = nil
         queue = []
         lyrics = nil
+        lyricsErrorMessage = nil
         resolvedAsset = nil
         if let playbackFile { try? FileManager.default.removeItem(at: playbackFile) }
         playbackFile = nil
@@ -280,7 +332,9 @@ final class PlayerStore: ObservableObject {
 
     func resume() {
         guard player.currentItem != nil else {
-            if let currentTrack { Task { await play(currentTrack) } }
+            if let currentTrack {
+                Task { await play(currentTrack, queue: nil, recoveryAttempt: 0, recordHistory: false) }
+            }
             return
         }
         player.play()
@@ -303,32 +357,85 @@ final class PlayerStore: ObservableObject {
 
     func next() {
         guard let currentTrack, !queue.isEmpty else { return }
+        if historyCursor + 1 < playHistory.count {
+            historyCursor += 1
+            let historicalTrack = playHistory[historyCursor]
+            Task { await play(historicalTrack, queue: nil, recoveryAttempt: 0, recordHistory: false) }
+            return
+        }
         let nextTrack: Track?
         if isShuffling {
-            nextTrack = queue.filter { $0.id != currentTrack.id }.randomElement() ?? currentTrack
+            var candidates = queue.filter { !shuffledPlayedIDs.contains($0.id) }
+            if candidates.isEmpty, !isWaveQueue, repeatMode == .all {
+                shuffledPlayedIDs = [currentTrack.id]
+                candidates = queue.filter { $0.id != currentTrack.id }
+            }
+            nextTrack = candidates.randomElement()
         } else if let index = queue.firstIndex(where: { $0.id == currentTrack.id }), index + 1 < queue.count {
             nextTrack = queue[index + 1]
-        } else if repeatMode == .all {
+        } else if repeatMode == .all, !isWaveQueue {
             nextTrack = queue.first
         } else {
             nextTrack = nil
         }
-        if let nextTrack { Task { await play(nextTrack) } } else { pause() }
+        if let nextTrack {
+            Task { await play(nextTrack, queue: nil, recoveryAttempt: 0) }
+        } else if isWaveQueue {
+            pendingWaveAdvance = true
+            isBuffering = true
+            refillWaveIfNeeded(force: true)
+        } else { pause() }
     }
 
     func previous() {
-        if currentTime > 3 {
+        if currentTime > 3 && !isShuffling {
             seek(to: 0)
             return
         }
-        guard let currentTrack,
-              let index = queue.firstIndex(where: { $0.id == currentTrack.id }),
-              index > 0
-        else {
+        guard historyCursor > 0 else {
             seek(to: 0)
             return
         }
-        Task { await play(queue[index - 1]) }
+        historyCursor -= 1
+        let previousTrack = playHistory[historyCursor]
+        Task { await play(previousTrack, queue: nil, recoveryAttempt: 0, recordHistory: false) }
+    }
+
+    private func refillWaveIfNeeded(force: Bool = false) {
+        guard isWaveQueue, waveLoadingTask == nil, let last = queue.last,
+              let currentTrack,
+              force || (isShuffling
+                  ? queue.filter { !shuffledPlayedIDs.contains($0.id) }.count <= 2
+                  : (queue.firstIndex(where: { $0.id == currentTrack.id }).map { queue.count - $0 <= 3 } ?? false))
+        else { return }
+        let anchor = last.id
+        waveLoadingTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.waveLoadingTask = nil }
+            do {
+                let fetched = try await self.service.nextWaveTracks(after: anchor)
+                guard !Task.isCancelled, self.isWaveQueue else { return }
+                var existing = Set(self.queue.map(\.id))
+                let fresh = fetched.filter { existing.insert($0.id).inserted }
+                self.queue.append(contentsOf: fresh)
+                if self.pendingWaveAdvance {
+                    self.pendingWaveAdvance = false
+                    self.isBuffering = false
+                    if fresh.isEmpty {
+                        self.errorMessage = "Моя волна пока не вернула новые треки. Попробуйте ещё раз."
+                        self.pause()
+                    } else {
+                        self.next()
+                    }
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.pendingWaveAdvance = false
+                self.isBuffering = false
+                self.errorMessage = "Не удалось продолжить Мою волну: \(error.localizedDescription)"
+                self.pause()
+            }
+        }
     }
 
     func cycleRepeatMode() {
@@ -336,6 +443,42 @@ final class PlayerStore: ObservableObject {
         case .off: repeatMode = .all
         case .all: repeatMode = .one
         case .one: repeatMode = .off
+        }
+    }
+
+    func reloadLyrics() {
+        guard let currentTrack else { return }
+        lyricsErrorMessage = nil
+        Task { await loadLyrics(for: currentTrack, requestID: requestID) }
+    }
+
+    private func loadLyrics(for track: Track, requestID identifier: UUID) async {
+        if let cached = await offlineStore.localLyrics(for: track.id), !cached.lines.isEmpty {
+            guard requestID == identifier else { return }
+            lyrics = cached
+            return
+        }
+        var serviceError: String?
+        do {
+            if let fetched = try await service.lyrics(for: track), !fetched.lines.isEmpty {
+                guard requestID == identifier else { return }
+                lyrics = fetched
+                lyricsErrorMessage = nil
+                return
+            }
+        } catch is CancellationError { return }
+        catch { serviceError = error.localizedDescription }
+        do {
+            let fetched = try await lyricsSettings.fallbackLyrics(for: track)
+            guard requestID == identifier else { return }
+            lyrics = fetched
+            lyricsErrorMessage = fetched == nil
+                ? (serviceError.map { "Текст не найден. Яндекс: \($0)" } ?? "Текст не найден в доступных источниках.")
+                : nil
+        } catch is CancellationError { return }
+        catch {
+            guard requestID == identifier else { return }
+            lyricsErrorMessage = "Яндекс: \(serviceError ?? "текст недоступен"). Резерв: \(error.localizedDescription)"
         }
     }
 
@@ -530,6 +673,20 @@ final class PlayerStore: ObservableObject {
     }
 
     private func configureObservers() {
+        waveObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.05, preferredTimescale: 600),
+            queue: .main
+        ) { [weak self] time in
+            Task { @MainActor in
+                guard let self else { return }
+                let fallback = 0.25 + 0.28 * abs(sin(time.seconds * 6.7))
+                    + 0.16 * abs(sin(time.seconds * 10.9))
+                let level = self.isPlaying && time.seconds.isFinite
+                    ? (self.audioEnvelope?.level(at: time.seconds) ?? Float(fallback))
+                    : 0
+                self.waveMotion.update(level)
+            }
+        }
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
             queue: .main

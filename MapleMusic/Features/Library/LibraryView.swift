@@ -135,7 +135,6 @@ struct TrackListView: View {
                         Label("Воспроизвести", systemImage: "play.fill")
                             .frame(maxWidth: .infinity)
                             .font(.headline)
-                            .foregroundStyle(.white)
                     }
                     .tint(appearance.tint)
                     .adaptiveProminentButtonStyle()
@@ -204,7 +203,6 @@ struct PlaylistView: View {
                         Button { if let first = playlist.tracks.first { Task { await player.play(first, queue: playlist.tracks) } } } label: {
                             Label("Воспроизвести", systemImage: "play.fill")
                                 .frame(maxWidth: .infinity)
-                                .foregroundStyle(.white)
                         }
                         .tint(appearance.tint)
                         .adaptiveProminentButtonStyle()

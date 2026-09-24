@@ -20,22 +20,36 @@ struct MapleMusicApp: App {
 private struct ProviderRoot: View {
     @EnvironmentObject private var appearance: AppearanceSettings
     @StateObject private var container: AppContainer
+    @State private var showsWelcome: Bool
     init(configuration: ProviderConfiguration) {
         _container = StateObject(wrappedValue: AppContainer(configuration: configuration))
+        _showsWelcome = State(initialValue:
+            UserDefaults.standard.object(forKey: "has-seen-welcome") == nil
+                && UserDefaults.standard.data(forKey: "provider-configuration") == nil
+        )
     }
     var body: some View {
-            RootView()
-                .environmentObject(container)
-                .environmentObject(container.auth)
-                .environmentObject(container.catalog)
-                .environmentObject(container.player)
-                .environmentObject(container.downloads)
-                .environmentObject(container.lyricsSettings)
-                .environmentObject(container.downloadPreferences)
-                .environmentObject(container.waveSettings)
-                .task { await container.bootstrap() }
-                .tint(appearance.tint)
-                .preferredColorScheme(appearance.interfaceStyle.colorScheme)
-                .onDisappear { container.player.stop() }
+        Group {
+            if showsWelcome {
+                WelcomeView {
+                    UserDefaults.standard.set(true, forKey: "has-seen-welcome")
+                    showsWelcome = false
+                }
+            } else {
+                RootView()
+                    .task { await container.bootstrap() }
+            }
+        }
+        .environmentObject(container)
+        .environmentObject(container.auth)
+        .environmentObject(container.catalog)
+        .environmentObject(container.player)
+        .environmentObject(container.downloads)
+        .environmentObject(container.lyricsSettings)
+        .environmentObject(container.downloadPreferences)
+        .environmentObject(container.waveSettings)
+        .tint(appearance.tint)
+        .preferredColorScheme(appearance.interfaceStyle.colorScheme)
+        .onDisappear { container.player.stop() }
     }
 }

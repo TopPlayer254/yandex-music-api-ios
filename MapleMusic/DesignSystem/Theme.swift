@@ -10,6 +10,7 @@ enum AccentColorChoice: String, CaseIterable, Identifiable {
     case violet
     case green
     case graphite
+    case custom
 
     var id: Self { self }
 
@@ -22,6 +23,7 @@ enum AccentColorChoice: String, CaseIterable, Identifiable {
         case .violet: "Фиолетовый"
         case .green: "Зелёный"
         case .graphite: "Графитовый"
+        case .custom: "Свой цвет"
         }
     }
 
@@ -34,6 +36,7 @@ enum AccentColorChoice: String, CaseIterable, Identifiable {
         case .violet: .purple
         case .green: .green
         case .graphite: Color(uiColor: .systemGray)
+        case .custom: Color(red: 1.00, green: 0.80, blue: 0.00)
         }
     }
 }
@@ -72,14 +75,53 @@ final class AppearanceSettings: ObservableObject {
         didSet { UserDefaults.standard.set(interfaceStyle.rawValue, forKey: "interface-style") }
     }
 
+    @Published var customRed: Double {
+        didSet { UserDefaults.standard.set(customRed, forKey: "accent-custom-red"); accent = .custom }
+    }
+    @Published var customGreen: Double {
+        didSet { UserDefaults.standard.set(customGreen, forKey: "accent-custom-green"); accent = .custom }
+    }
+    @Published var customBlue: Double {
+        didSet { UserDefaults.standard.set(customBlue, forKey: "accent-custom-blue"); accent = .custom }
+    }
+
     init() {
         accent = AccentColorChoice(rawValue: UserDefaults.standard.string(forKey: "accent-color") ?? "") ?? .yandexYellow
         interfaceStyle = InterfaceStyleChoice(
             rawValue: UserDefaults.standard.string(forKey: "interface-style") ?? ""
         ) ?? .automatic
+        customRed = UserDefaults.standard.object(forKey: "accent-custom-red") as? Double ?? 1
+        customGreen = UserDefaults.standard.object(forKey: "accent-custom-green") as? Double ?? 0.8
+        customBlue = UserDefaults.standard.object(forKey: "accent-custom-blue") as? Double ?? 0
     }
 
-    var tint: Color { accent.color }
+    var tint: Color {
+        accent == .custom ? Color(red: customRed, green: customGreen, blue: customBlue) : accent.color
+    }
+
+    var accentText: Color {
+        let color = UIColor(tint)
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return .black }
+        let luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+        if luminance < 0.36 { return .white }
+        return Color(red: Double(red) * 0.22, green: Double(green) * 0.22, blue: Double(blue) * 0.22)
+    }
+}
+
+struct AccentActionButtonStyle: ButtonStyle {
+    @EnvironmentObject private var appearance: AppearanceSettings
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundStyle(appearance.accentText)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+            .background(appearance.tint, in: Capsule())
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+    }
 }
 
 private struct MarqueeTextWidthKey: PreferenceKey {
@@ -217,13 +259,8 @@ extension View {
         modifier(AdaptiveGlassModifier(shape: shape, interactive: interactive))
     }
 
-    @ViewBuilder
     func adaptiveProminentButtonStyle() -> some View {
-        if #available(iOS 26.0, *) {
-            buttonStyle(.glassProminent)
-        } else {
-            buttonStyle(.borderedProminent)
-        }
+        buttonStyle(AccentActionButtonStyle())
     }
 
     @ViewBuilder

@@ -11,23 +11,26 @@ static float mapleMetaball(float2 point, float2 center, float radius) {
     return (radius * radius) / squaredDistance;
 }
 
-static float3 mapleWaveWeights(float2 point, float aspectRatio, float time) {
+static float3 mapleWaveWeights(float2 point, float aspectRatio, float time, float intensity) {
+    float beat = clamp(intensity, 0.0, 1.0);
+    time *= 1.35 + 1.55 * beat;
+    float excursion = 1.0 + 1.8 * beat;
     float2 firstCenter = mapleAspectPoint(float2(
-        0.34 + 0.035 * sin(time * 0.62),
-        0.34 + 0.045 * cos(time * 0.47)
+        0.34 + 0.035 * excursion * sin(time * 0.62),
+        0.34 + 0.045 * excursion * cos(time * 0.47)
     ), aspectRatio);
     float2 secondCenter = mapleAspectPoint(float2(
-        0.46 + 0.045 * cos(time * 0.39 + 1.4),
-        0.65 + 0.035 * sin(time * 0.56)
+        0.46 + 0.045 * excursion * cos(time * 0.39 + 1.4),
+        0.65 + 0.035 * excursion * sin(time * 0.56)
     ), aspectRatio);
     float2 thirdCenter = mapleAspectPoint(float2(
-        0.67 + 0.035 * sin(time * 0.51 + 2.2),
-        0.48 + 0.04 * cos(time * 0.43 + 0.8)
+        0.67 + 0.035 * excursion * sin(time * 0.51 + 2.2),
+        0.48 + 0.04 * excursion * cos(time * 0.43 + 0.8)
     ), aspectRatio);
     return float3(
-        mapleMetaball(point, firstCenter, 0.18),
-        mapleMetaball(point, secondCenter, 0.16),
-        mapleMetaball(point, thirdCenter, 0.18)
+        mapleMetaball(point, firstCenter, 0.18 * (1.0 + 0.10 * beat)),
+        mapleMetaball(point, secondCenter, 0.16 * (1.0 + 0.12 * beat)),
+        mapleMetaball(point, thirdCenter, 0.18 * (1.0 + 0.10 * beat))
     );
 }
 
@@ -36,6 +39,7 @@ static float3 mapleWaveWeights(float2 point, float aspectRatio, float time) {
     half4 sourceColor,
     float2 size,
     float time,
+    float intensity,
     half4 primaryColor,
     half4 secondaryColor,
     half4 tertiaryColor
@@ -44,7 +48,7 @@ static float3 mapleWaveWeights(float2 point, float aspectRatio, float time) {
     float aspectRatio = safeSize.x / safeSize.y;
     float2 point = mapleAspectPoint(position / safeSize, aspectRatio);
 
-    float3 weights = mapleWaveWeights(point, aspectRatio, time);
+    float3 weights = mapleWaveWeights(point, aspectRatio, time, intensity);
     float firstWeight = weights.x;
     float secondWeight = weights.y;
     float thirdWeight = weights.z;
@@ -70,6 +74,7 @@ static float3 mapleWaveWeights(float2 point, float aspectRatio, float time) {
     SwiftUI::Layer layer,
     float2 size,
     float time,
+    float intensity,
     half4 primaryColor,
     half4 secondaryColor,
     half4 tertiaryColor
@@ -77,19 +82,19 @@ static float3 mapleWaveWeights(float2 point, float aspectRatio, float time) {
     float2 safeSize = max(size, float2(1.0));
     float aspectRatio = safeSize.x / safeSize.y;
     float2 point = mapleAspectPoint(position / safeSize, aspectRatio);
-    float3 weights = mapleWaveWeights(point, aspectRatio, time);
+    float3 weights = mapleWaveWeights(point, aspectRatio, time, intensity);
     float totalWeight = weights.x + weights.y + weights.z;
     float mask = smoothstep(0.98, 1.02, totalWeight);
 
     float epsilon = 0.004;
     float horizontal = dot(
-        mapleWaveWeights(point + float2(epsilon, 0), aspectRatio, time)
-            - mapleWaveWeights(point - float2(epsilon, 0), aspectRatio, time),
+        mapleWaveWeights(point + float2(epsilon, 0), aspectRatio, time, intensity)
+            - mapleWaveWeights(point - float2(epsilon, 0), aspectRatio, time, intensity),
         float3(1.0)
     );
     float vertical = dot(
-        mapleWaveWeights(point + float2(0, epsilon), aspectRatio, time)
-            - mapleWaveWeights(point - float2(0, epsilon), aspectRatio, time),
+        mapleWaveWeights(point + float2(0, epsilon), aspectRatio, time, intensity)
+            - mapleWaveWeights(point - float2(0, epsilon), aspectRatio, time, intensity),
         float3(1.0)
     );
     float2 gradient = normalize(float2(horizontal, vertical) + float2(0.0001));
@@ -110,19 +115,19 @@ static float3 mapleWaveWeights(float2 point, float aspectRatio, float time) {
 
 // The aura follows the same moving field as the artwork silhouette.
 [[ stitchable ]] half4 mapleWaveAura(
-    float2 position, half4 sourceColor, float2 size, float time,
+    float2 position, half4 sourceColor, float2 size, float time, float intensity,
     half4 primaryColor, half4 secondaryColor, half4 tertiaryColor
 ) {
     float2 safeSize = max(size, float2(1.0));
     float2 uv = position / safeSize;
     float aspectRatio = safeSize.x / safeSize.y;
-    float3 weights = mapleWaveWeights(mapleAspectPoint(uv, aspectRatio), aspectRatio, time);
+    float3 weights = mapleWaveWeights(mapleAspectPoint(uv, aspectRatio), aspectRatio, time, intensity);
     float field = dot(weights, float3(1.0));
     float3 tint = (float3(primaryColor.rgb) * weights.x
         + float3(secondaryColor.rgb) * weights.y
         + float3(tertiaryColor.rgb) * weights.z) / max(field, 0.001);
     float halo = exp(-pow((field - 0.85) / 0.30, 2.0));
     float edgeDistance = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
-    float alpha = halo * 0.64 * smoothstep(0.0, 0.10, edgeDistance);
+    float alpha = halo * (0.55 + 0.36 * clamp(intensity, 0.0, 1.0)) * smoothstep(0.0, 0.10, edgeDistance);
     return half4(half3(tint * alpha), half(alpha));
 }

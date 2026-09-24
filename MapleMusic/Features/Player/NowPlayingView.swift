@@ -87,40 +87,19 @@ struct NowPlayingView: View {
     }
 
     private var moreMenu: some View {
-        Menu {
-            Picker("Качество", selection: $player.preferredQuality) {
-                ForEach(AudioQuality.selectableCases) { quality in
-                    Text(quality.title).tag(quality)
-                }
-            }
-
-            if let track = player.currentTrack {
-                TrackActions(track: track)
-                if downloads.isDownloaded(track) {
-                    Button("Удалить загрузку", systemImage: "trash", role: .destructive) {
-                        Task { await downloads.remove(track) }
-                    }
-                } else if track.downloadAllowed {
-                    Button("Загрузить", systemImage: "arrow.down.circle") {
-                        Task { await downloads.download(track, quality: player.preferredQuality) }
-                    }
-                }
-            }
-
-            Divider()
-            Button(player.isShuffling ? "Выключить перемешивание" : "Перемешать", systemImage: "shuffle") {
-                player.isShuffling.toggle()
-            }
-            Button(repeatTitle, systemImage: player.repeatMode == .one ? "repeat.1" : "repeat") {
-                player.cycleRepeatMode()
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.headline)
-                .frame(width: 42, height: 42)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Действия с треком")
+        StableNowPlayingMenu(
+            track: player.currentTrack,
+            quality: player.preferredQuality,
+            isShuffling: player.isShuffling,
+            repeatMode: player.repeatMode,
+            isDownloaded: player.currentTrack.map(downloads.isDownloaded) ?? false,
+            selectQuality: { player.preferredQuality = $0 },
+            toggleShuffle: { player.isShuffling.toggle() },
+            cycleRepeat: { player.cycleRepeatMode() },
+            download: { track in Task { await downloads.download(track, quality: player.preferredQuality) } },
+            removeDownload: { track in Task { await downloads.remove(track) } }
+        )
+        .equatable()
     }
 
     private var playerPage: some View {
@@ -276,14 +255,69 @@ struct NowPlayingView: View {
         .font(.title3)
     }
 
+}
+
+private struct StableNowPlayingMenu: View, Equatable {
+    let track: Track?
+    let quality: AudioQuality
+    let isShuffling: Bool
+    let repeatMode: RepeatMode
+    let isDownloaded: Bool
+    let selectQuality: (AudioQuality) -> Void
+    let toggleShuffle: () -> Void
+    let cycleRepeat: () -> Void
+    let download: (Track) -> Void
+    let removeDownload: (Track) -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.track?.id == rhs.track?.id && lhs.quality == rhs.quality
+            && lhs.isShuffling == rhs.isShuffling && lhs.repeatMode == rhs.repeatMode
+            && lhs.isDownloaded == rhs.isDownloaded
+    }
+
+    var body: some View {
+        Menu {
+            Menu("Качество") {
+                ForEach(AudioQuality.selectableCases) { option in
+                    Button {
+                        selectQuality(option)
+                    } label: {
+                        if quality == option { Label(option.title, systemImage: "checkmark") }
+                        else { Text(option.title) }
+                    }
+                }
+            }
+            if let track {
+                TrackActions(track: track)
+                if isDownloaded {
+                    Button("Удалить загрузку", systemImage: "trash", role: .destructive) {
+                        removeDownload(track)
+                    }
+                } else if track.downloadAllowed {
+                    Button("Загрузить", systemImage: "arrow.down.circle") { download(track) }
+                }
+            }
+            Divider()
+            Button(isShuffling ? "Выключить перемешивание" : "Перемешать", systemImage: "shuffle") {
+                toggleShuffle()
+            }
+            Button(repeatTitle, systemImage: repeatMode == .one ? "repeat.1" : "repeat") {
+                cycleRepeat()
+            }
+        } label: {
+            Image(systemName: "ellipsis").font(.headline).frame(width: 42, height: 42)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Действия с треком")
+    }
+
     private var repeatTitle: String {
-        switch player.repeatMode {
+        switch repeatMode {
         case .off: "Повтор: выключен"
         case .all: "Повторять очередь"
         case .one: "Повторять трек"
         }
     }
-
 }
 
 private struct MinimalTrackSlider: View {
@@ -433,11 +467,14 @@ private struct LyricsView: View {
                     }
                 }
             } else {
-                ContentUnavailableView(
-                    "Текст недоступен",
-                    systemImage: "quote.bubble",
-                    description: Text("Он появится, если выбранный музыкальный сервис предоставляет текст песни.")
-                )
+                ContentUnavailableView {
+                    Label("Текст недоступен", systemImage: "quote.bubble")
+                } description: {
+                    Text(player.lyricsErrorMessage ?? "Ищем текст у Яндекса и в открытом каталоге LRCLIB.")
+                } actions: {
+                    Button("Повторить") { player.reloadLyrics() }
+                        .buttonStyle(.bordered)
+                }
                 .foregroundStyle(.white)
             }
         }
@@ -460,7 +497,7 @@ private struct QueueView: View {
                     }
                     Spacer()
                     if player.currentTrack?.id == track.id {
-                        Image(systemName: "waveform").foregroundStyle(appearance.tint)
+                        PlayingEqualizer(isPlaying: player.isPlaying, color: appearance.tint)
                     }
                 }
             }
@@ -469,6 +506,29 @@ private struct QueueView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+    }
+}
+
+private struct PlayingEqualizer: View {
+    @Environment(\.accessibilityReduceMotion) private var reducesMotion
+    let isPlaying: Bool
+    let color: Color
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: !isPlaying || reducesMotion)) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .center, spacing: 2) {
+                ForEach(0..<4, id: \.self) { index in
+                    Capsule()
+                        .fill(color)
+                        .frame(width: 3, height: isPlaying && !reducesMotion
+                            ? 5 + 12 * abs(sin(time * (5.2 + Double(index) * 1.3) + Double(index)))
+                            : 6)
+                }
+            }
+            .frame(width: 20, height: 19)
+        }
+        .accessibilityLabel(isPlaying ? "Сейчас играет" : "Выбранный трек")
     }
 }
 
