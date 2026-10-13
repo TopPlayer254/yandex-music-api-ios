@@ -7,8 +7,8 @@ struct AudioEnvelope: Sendable {
     let secondsPerBin: Double
 
     func level(at time: TimeInterval) -> Float {
-        guard !levels.isEmpty else { return 0 }
-        let position = max(0, time / secondsPerBin)
+        guard !levels.isEmpty, time.isFinite, secondsPerBin > 0 else { return 0 }
+        let position = min(max(0, time / secondsPerBin), Double(levels.count - 1))
         let first = min(Int(position), levels.count - 1)
         let second = min(first + 1, levels.count - 1)
         let blend = Float(position - Double(first))
@@ -32,6 +32,7 @@ actor AudioEnvelopeAnalyzer {
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
         reader.add(output)
         guard reader.startReading() else { return nil }
+        defer { reader.cancelReading() }
 
         let binDuration = 0.08
         var squares: [Double] = []
@@ -59,12 +60,14 @@ actor AudioEnvelopeAnalyzer {
             }
         }
         guard reader.status == .completed, !squares.isEmpty else { return nil }
-        let levels = zip(squares, counts).map { pair -> Float in
+        let rmsLevels = zip(squares, counts).map { pair -> Double in
             let (sum, count) = pair
             guard count > 0 else { return 0 }
-            let rms = sqrt(sum / Double(count))
-            return Float(min(max(pow(rms / 0.18, 0.65), 0), 1))
+            return sqrt(sum / Double(count))
         }
+        let sorted = rmsLevels.sorted()
+        let peak = max(sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.95))], 0.03)
+        let levels = rmsLevels.map { Float(min(pow($0 / peak, 1.5), 1)) }
         return AudioEnvelope(levels: levels, secondsPerBin: binDuration)
     }
 }

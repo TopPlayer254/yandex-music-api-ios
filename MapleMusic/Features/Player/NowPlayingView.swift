@@ -23,10 +23,13 @@ struct NowPlayingView: View {
     @EnvironmentObject private var player: PlayerStore
     @EnvironmentObject private var downloads: DownloadsStore
     @State private var page: Page = .player
+    @State private var backgroundVisible = false
+    @Environment(\.accessibilityReduceMotion) private var reducesMotion
 
     var body: some View {
         ZStack {
             ArtworkBackdrop(artwork: player.currentTrack?.artwork)
+                .opacity(backgroundVisible ? 1 : 0)
 
             VStack(spacing: 0) {
                 header
@@ -52,6 +55,11 @@ struct NowPlayingView: View {
         }
         .animation(.easeInOut(duration: 0.24), value: page)
         .preferredColorScheme(.dark)
+        .background(Color.black.ignoresSafeArea())
+        .onAppear {
+            if player.opensLyrics { page = .lyrics; player.opensLyrics = false }
+            withAnimation(.easeOut(duration: reducesMotion ? 0 : 0.35)) { backgroundVisible = true }
+        }
         .presentationDragIndicator(.hidden)
         .onChange(of: player.currentTrack?.id) { _, trackID in
             if trackID == nil { dismiss() }
@@ -120,7 +128,7 @@ struct NowPlayingView: View {
 
                 Spacer(minLength: compact ? 6 : 12)
                 metadata
-                scrubber
+                PlaybackScrubber(player: player, clock: player.clock)
                 transportControls(compact: compact)
                 volumeControl
                 Spacer(minLength: 2)
@@ -157,33 +165,13 @@ struct NowPlayingView: View {
                         .font(.title3)
                         .foregroundStyle(catalog.isFavorite(track) ? appearance.tint : .white)
                         .frame(width: 40, height: 40)
+                        .background(.white.opacity(catalog.isFavorite(track) ? 0.16 : 0), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(catalog.isFavorite(track) ? "Убрать из любимого" : "Добавить в любимое")
             }
         }
         .foregroundStyle(.white)
-    }
-
-    private var scrubber: some View {
-        VStack(spacing: 3) {
-            MinimalTrackSlider(
-                value: Binding(get: { player.currentTime }, set: player.seek),
-                range: 0 ... max(player.duration, 1),
-                activeColor: .white.opacity(0.9),
-                inactiveColor: .white.opacity(0.24)
-            )
-            .accessibilityLabel("Позиция воспроизведения")
-            .accessibilityValue(player.currentTime.musicTime)
-
-            HStack {
-                Text(player.currentTime.musicTime)
-                Spacer()
-                Text("−\(max(player.duration - player.currentTime, 0).musicTime)")
-            }
-            .font(.caption2.monospacedDigit())
-            .foregroundStyle(.white.opacity(0.62))
-        }
     }
 
     private func transportControls(compact: Bool) -> some View {
@@ -235,6 +223,7 @@ struct NowPlayingView: View {
                 Image(systemName: "quote.bubble")
                     .frame(width: 44, height: 44)
                     .foregroundStyle(page == .lyrics ? appearance.tint : .white)
+                    .background(.white.opacity(page == .lyrics ? 0.16 : 0), in: RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Текст песни")
@@ -248,6 +237,7 @@ struct NowPlayingView: View {
                 Image(systemName: "list.bullet")
                     .frame(width: 44, height: 44)
                     .foregroundStyle(page == .queue ? appearance.tint : .white)
+                    .background(.white.opacity(page == .queue ? 0.16 : 0), in: RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Очередь")
@@ -320,7 +310,7 @@ private struct StableNowPlayingMenu: View, Equatable {
     }
 }
 
-private struct MinimalTrackSlider: View {
+struct MinimalTrackSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     let activeColor: Color
@@ -338,7 +328,7 @@ private struct MinimalTrackSlider: View {
                     .fill(activeColor)
                     .frame(width: width * fraction)
             }
-            .frame(height: 4)
+            .frame(height: 7)
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
             .gesture(
@@ -362,7 +352,8 @@ private struct MinimalTrackSlider: View {
     }
 }
 
-private struct ArtworkBackdrop: View {
+struct ArtworkBackdrop: View {
+    @Environment(\.accessibilityReduceMotion) private var reducesMotion
     let artwork: Artwork?
     @State private var drifts = false
     @State private var image: UIImage?
@@ -394,6 +385,7 @@ private struct ArtworkBackdrop: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .onAppear {
+            guard !reducesMotion else { return }
             withAnimation(.easeInOut(duration: 14).repeatForever(autoreverses: true)) {
                 drifts = true
             }
@@ -417,6 +409,13 @@ private struct ArtworkBackdrop: View {
 
 private struct LyricsView: View {
     @EnvironmentObject private var player: PlayerStore
+
+    var body: some View { TimedLyricsView(player: player, clock: player.clock) }
+}
+
+private struct TimedLyricsView: View {
+    @ObservedObject var player: PlayerStore
+    @ObservedObject var clock: PlaybackClock
 
     var body: some View {
         Group {

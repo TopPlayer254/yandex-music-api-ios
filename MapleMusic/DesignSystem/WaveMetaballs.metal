@@ -13,7 +13,8 @@ static float mapleMetaball(float2 point, float2 center, float radius) {
 
 static float3 mapleWaveWeights(float2 point, float aspectRatio, float time, float intensity) {
     float beat = clamp(intensity, 0.0, 1.0);
-    time *= 1.35 + 1.55 * beat;
+    // Audio modulates shape, never the absolute phase (which caused jumps).
+    time *= 1.65;
     float excursion = 1.0 + 1.8 * beat;
     float2 firstCenter = mapleAspectPoint(float2(
         0.34 + 0.035 * excursion * sin(time * 0.62),
@@ -28,9 +29,9 @@ static float3 mapleWaveWeights(float2 point, float aspectRatio, float time, floa
         0.48 + 0.04 * excursion * cos(time * 0.43 + 0.8)
     ), aspectRatio);
     return float3(
-        mapleMetaball(point, firstCenter, 0.18 * (1.0 + 0.10 * beat)),
-        mapleMetaball(point, secondCenter, 0.16 * (1.0 + 0.12 * beat)),
-        mapleMetaball(point, thirdCenter, 0.18 * (1.0 + 0.10 * beat))
+        mapleMetaball(point, firstCenter, 0.17 * (1.0 + 0.24 * beat)),
+        mapleMetaball(point, secondCenter, 0.15 * (1.0 + 0.30 * beat)),
+        mapleMetaball(point, thirdCenter, 0.17 * (1.0 + 0.24 * beat))
     );
 }
 

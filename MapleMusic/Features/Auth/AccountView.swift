@@ -132,6 +132,8 @@ struct AccountView: View {
 
 private struct DeveloperSettingsView: View {
     @EnvironmentObject private var developerSettings: DeveloperSettings
+    @EnvironmentObject private var player: PlayerStore
+    @ObservedObject private var liveActivity = LiveActivityController.shared
 
     var body: some View {
         List {
@@ -141,8 +143,14 @@ private struct DeveloperSettingsView: View {
                     isOn: $developerSettings.usesNewShaderBasedWave
                 )
                 Toggle("Show codename", isOn: $developerSettings.showsCodename)
+                Toggle("Show literal crash response", isOn: $developerSettings.showsLiteralCrashResponse)
+                Toggle("New Retry screen", isOn: $developerSettings.usesNewRetryScreen)
+                NavigationLink("Последний ответ сервера") { DiagnosticResponseView() }
+                Toggle("Live Activity: текст песни", isOn: $developerSettings.usesLiveActivity)
+                    .onChange(of: developerSettings.usesLiveActivity) { _, _ in player.refreshLiveActivity() }
+                Text(liveActivity.status).font(.caption).foregroundStyle(.secondary)
             } footer: {
-                Text("Первый переключатель включает новую карточку «Моей волны». Show codename заменяет заголовок главной на векторный логотип Maple.")
+                Text("Диагностика показывает ответ API с удалёнными секретами, только в памяти текущего сеанса. Она не перехватывает аварийное завершение iOS. New Retry screen заменяет уведомления об ошибках экраном повторной попытки.")
             }
         }
         .navigationTitle("Разработчик")
@@ -274,6 +282,7 @@ private struct AccountSettingsView: View {
                     Button("Очистить сессию и выйти", role: .destructive) {
                         showsClearSessionConfirmation = true
                     }
+                    .tint(.red)
                 } footer: {
                     Text("Локальный токен, кэш профиля, cookies и сетевой кэш будут удалены. Сохранённые треки останутся в хранилище.")
                 }
@@ -364,11 +373,20 @@ private struct LyricsSettingsView: View {
 
     var body: some View {
         Form {
+            Section("Порядок источников") {
+                ForEach(settings.sourceOrder) { source in
+                    Text(source.title)
+                }
+                .onMove { indices, destination in
+                    settings.sourceOrder.move(fromOffsets: indices, toOffset: destination)
+                }
+            }
+            .environment(\.editMode, .constant(.active))
             Section {
                 Toggle("Использовать Genius как резерв", isOn: $settings.usesGeniusFallback)
                     .disabled(!settings.hasGeniusToken)
             } footer: {
-                Text("Сначала приложение запрашивает текст у музыкального сервиса, затем у LRCLIB. Genius с вашим ключом используется последним резервом.")
+                Text("Перетащите источники в нужном порядке. Сохранённый текст доступен без сети. Genius пропускается, если ключ не настроен.")
             }
 
             Section("Genius API") {
@@ -391,6 +409,7 @@ private struct LyricsSettingsView: View {
                     Button("Удалить API-ключ", role: .destructive) {
                         Task { await settings.clearToken() }
                     }
+                    .tint(.red)
                 }
 
                 Link("Открыть страницу API-клиентов Genius", destination: URL(string: "https://genius.com/api-clients")!)
@@ -524,6 +543,7 @@ private struct StorageSettingsView: View {
                 Button("Удалить все сохранённые треки", role: .destructive) {
                     showsClearDownloadsConfirmation = true
                 }
+                .tint(.red)
                 .disabled(downloads.entries.isEmpty)
             }
 

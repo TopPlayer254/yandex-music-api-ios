@@ -110,6 +110,8 @@ struct WaveLaunchButton: View {
 
 private struct WaveArtworkSurface: View {
     @Environment(\.accessibilityReduceMotion) private var reducesMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var animationOrigin = Date()
     let image: UIImage?
     let mood: WaveMoodEnergy
     let intensity: Float
@@ -117,7 +119,7 @@ private struct WaveArtworkSurface: View {
     var body: some View {
         let palette = palette
         GeometryReader { proxy in
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reducesMotion)) { timeline in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reducesMotion || scenePhase != .active)) { timeline in
               ZStack {
                 Rectangle()
                     .fill(.white)
@@ -177,7 +179,7 @@ private struct WaveArtworkSurface: View {
     }
 
     private func animationTime(_ date: Date) -> TimeInterval {
-        date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 120)
+        date.timeIntervalSince(animationOrigin)
     }
 
     private var palette: (primary: Color, secondary: Color, tertiary: Color) {

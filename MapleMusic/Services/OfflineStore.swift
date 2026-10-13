@@ -66,6 +66,32 @@ actor OfflineStore {
 
     func localLyrics(for trackID: String) -> Lyrics? { manifest.entries[trackID]?.lyrics }
 
+    // Snapshots share the audio account partition, never the global URL cache.
+    func cachedLibrary() -> MusicLibrary? {
+        guard let data = try? Data(contentsOf: root.appendingPathComponent("library.json")) else { return nil }
+        return try? JSONDecoder().decode(MusicLibrary.self, from: data)
+    }
+
+    func cacheLibrary(_ library: MusicLibrary) throws {
+        try ensureRoot()
+        try JSONEncoder().encode(library).write(to: root.appendingPathComponent("library.json"), options: .atomic)
+    }
+
+    func cachedPlaylist(_ id: String) -> Playlist? {
+        guard let data = try? Data(contentsOf: playlistSnapshotURL(id)) else { return nil }
+        return try? JSONDecoder().decode(Playlist.self, from: data)
+    }
+
+    func cachePlaylist(_ playlist: Playlist) throws {
+        try ensureRoot()
+        try JSONEncoder().encode(playlist).write(to: playlistSnapshotURL(playlist.id), options: .atomic)
+    }
+
+    private func playlistSnapshotURL(_ id: String) -> URL {
+        let hash = SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+        return root.appendingPathComponent("playlist-\(hash).json")
+    }
+
     func entries() -> [OfflineEntry] {
         manifest.entries.values.filter { contains(trackID: $0.trackID) }.sorted { $0.savedAt > $1.savedAt }
     }

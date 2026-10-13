@@ -11,6 +11,7 @@ enum AccentColorChoice: String, CaseIterable, Identifiable {
     case green
     case graphite
     case custom
+    case albumCover
 
     var id: Self { self }
 
@@ -24,6 +25,7 @@ enum AccentColorChoice: String, CaseIterable, Identifiable {
         case .green: "Зелёный"
         case .graphite: "Графитовый"
         case .custom: "Свой цвет"
+        case .albumCover: "Цвет обложки"
         }
     }
 
@@ -37,6 +39,7 @@ enum AccentColorChoice: String, CaseIterable, Identifiable {
         case .green: .green
         case .graphite: Color(uiColor: .systemGray)
         case .custom: Color(red: 1.00, green: 0.80, blue: 0.00)
+        case .albumCover: Color(red: 1.00, green: 0.80, blue: 0.00)
         }
     }
 }
@@ -67,6 +70,7 @@ enum InterfaceStyleChoice: String, CaseIterable, Identifiable {
 
 @MainActor
 final class AppearanceSettings: ObservableObject {
+    @Published private(set) var albumTint = AccentColorChoice.yandexYellow.color
     @Published var accent: AccentColorChoice {
         didSet { UserDefaults.standard.set(accent.rawValue, forKey: "accent-color") }
     }
@@ -96,7 +100,41 @@ final class AppearanceSettings: ObservableObject {
     }
 
     var tint: Color {
-        accent == .custom ? Color(red: customRed, green: customGreen, blue: customBlue) : accent.color
+        if accent == .albumCover { return albumTint }
+        return accent == .custom ? Color(red: customRed, green: customGreen, blue: customBlue) : accent.color
+    }
+
+    func followArtwork(_ artwork: Artwork?) async {
+        guard accent == .albumCover else { return }
+        guard let url = artwork?.url, let image = await ArtworkImageCache.shared.image(for: url),
+              let cgImage = image.cgImage else {
+            albumTint = AccentColorChoice.yandexYellow.color
+            return
+        }
+        let rgb = await Task.detached(priority: .utility) { () -> [Double]? in
+            var pixels = [UInt8](repeating: 0, count: 32 * 32 * 4)
+            return pixels.withUnsafeMutableBytes { bytes in
+                guard let ctx = CGContext(data: bytes.baseAddress, width: 32, height: 32, bitsPerComponent: 8,
+                    bytesPerRow: 128, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+                ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: 32, height: 32))
+                let buffer = bytes.bindMemory(to: UInt8.self)
+                var result = [Double](repeating: 0, count: 3)
+                var weight = 0.0
+                for i in stride(from: 0, to: buffer.count, by: 4) {
+                    let channels = (0..<3).map { Double(buffer[i + $0]) / 255 }
+                    let w = max((channels.max() ?? 0) - (channels.min() ?? 0), 0.03)
+                    for c in 0..<3 { result[c] += channels[c] * w }
+                    weight += w
+                }
+                return result.map { $0 / max(weight, 0.001) }
+            }
+        }.value
+        guard !Task.isCancelled, let rgb else { return }
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(red: rgb[0], green: rgb[1], blue: rgb[2], alpha: 1)
+            .getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        albumTint = Color(hue: hue, saturation: min(max(saturation, 0.35), 0.85), brightness: max(brightness, 0.8))
     }
 
     var accentText: Color {
@@ -111,15 +149,18 @@ final class AppearanceSettings: ObservableObject {
 
 struct AccentActionButtonStyle: ButtonStyle {
     @EnvironmentObject private var appearance: AppearanceSettings
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(appearance.accentText)
+            .foregroundStyle(configuration.role == .destructive ? Color.white : appearance.accentText)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 15)
-            .background(appearance.tint, in: Capsule())
-            .opacity(configuration.isPressed ? 0.75 : 1)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .frame(minHeight: 50)
+            .background(configuration.role == .destructive ? Color.red : appearance.tint, in: Capsule())
+            .opacity(!isEnabled ? 0.4 : (configuration.isPressed ? 0.75 : 1))
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
     }
 }
@@ -133,6 +174,7 @@ private struct MarqueeTextWidthKey: PreferenceKey {
 }
 
 struct MarqueeText: View {
+    @Environment(\.accessibilityReduceMotion) private var reducesMotion
     let text: String
     let font: Font
     let color: Color
@@ -172,11 +214,16 @@ struct MarqueeText: View {
         .task(id: "\(text)|\(Int(textWidth))|\(Int(containerWidth))") {
             offset = 0
             let overflow = max(textWidth - containerWidth, 0)
-            guard overflow > 8 else { return }
-            try? await Task.sleep(for: .seconds(1))
-            guard !Task.isCancelled else { return }
-            withAnimation(.linear(duration: max(3.5, Double(overflow / 24))).repeatForever(autoreverses: true)) {
-                offset = -overflow
+            guard overflow > 8, !reducesMotion else { return }
+            // Pause at both readable endpoints. No forever animation survives a
+            // track change or keeps offscreen labels animating.
+            let duration = max(2.5, Double(overflow / 28))
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(1.8)) } catch { return }
+                withAnimation(.linear(duration: duration)) { offset = -overflow }
+                do { try await Task.sleep(for: .seconds(duration + 1.8)) } catch { return }
+                withAnimation(.easeInOut(duration: 0.5)) { offset = 0 }
+                do { try await Task.sleep(for: .seconds(0.5)) } catch { return }
             }
         }
         .accessibilityLabel(text)

@@ -152,7 +152,7 @@ struct HomeView: View {
             if shelf.id == "my-wave",
                developerSettings.usesNewShaderBasedWave,
                let firstTrack = shelf.tracks.first {
-                let isCurrentWaveTrack = shelf.tracks.contains { $0.id == player.currentTrack?.id }
+                let isCurrentWaveTrack = player.isWaveQueue && player.currentTrack != nil
                 WaveLaunchButton(
                     motion: player.waveMotion,
                     artwork: player.currentTrack?.artwork ?? firstTrack.artwork,

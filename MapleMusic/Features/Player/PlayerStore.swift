@@ -9,10 +9,16 @@ final class PlayerStore: ObservableObject {
     @Published private(set) var currentTrack: Track?
     @Published private(set) var queue: [Track] = []
     @Published private(set) var isPlaying = false
-    @Published private(set) var currentTime: TimeInterval = 0
+    let clock = PlaybackClock()
+    private(set) var currentTime: TimeInterval {
+        get { clock.time }
+        set { clock.time = newValue }
+    }
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var resolvedAsset: PlaybackAsset?
-    @Published private(set) var lyrics: Lyrics?
+    @Published private(set) var lyrics: Lyrics? {
+        didSet { refreshLiveActivity() }
+    }
     @Published private(set) var lyricsErrorMessage: String?
     @Published var preferredQuality: AudioQuality {
         didSet { UserDefaults.standard.set(preferredQuality.rawValue, forKey: "preferred-quality") }
@@ -29,6 +35,8 @@ final class PlayerStore: ObservableObject {
         didSet { shuffledPlayedIDs = Set(playHistory.prefix(historyCursor + 1).map(\.id)) }
     }
     @Published var isShowingNowPlaying = false
+    var opensLyrics = false
+    private var lastActivityLyricsIndex: Int?
     @Published var errorMessage: String?
     @Published private(set) var isBuffering = false
     let waveMotion = WaveMotionStore()
@@ -49,6 +57,8 @@ final class PlayerStore: ObservableObject {
     private var endObserver: NSObjectProtocol?
     private var itemStatus: NSKeyValueObservation?
     private var requestID = UUID()
+    private var lastAttemptedTrack: Track?
+    private var seekID: UUID?
     private var playbackFile: URL?
     private var remoteTargets: [(MPRemoteCommand, Any)] = []
     private var artworkTask: Task<Void, Never>?
@@ -56,7 +66,7 @@ final class PlayerStore: ObservableObject {
     private var networkIsAvailable = true
     private var recoveryTask: Task<Void, Never>?
     private var pendingRecovery: PlaybackRecovery?
-    private var isWaveQueue = false
+    @Published private(set) var isWaveQueue = false
     private var waveLoadingTask: Task<Void, Never>?
     private var pendingWaveAdvance = false
     private var playHistory: [Track] = []
@@ -139,6 +149,7 @@ final class PlayerStore: ObservableObject {
     }
 
     private func play(_ track: Track, queue proposedQueue: [Track]?, recoveryAttempt: Int, recordHistory: Bool = true) async {
+        if remoteTargets.isEmpty { configureRemoteCommands() }
         if recoveryAttempt == 0 {
             recoveryTask?.cancel()
             recoveryTask = nil
@@ -146,6 +157,8 @@ final class PlayerStore: ObservableObject {
         }
         let identifier = UUID()
         requestID = identifier
+        seekID = nil
+        lastAttemptedTrack = track
         if recoveryAttempt == 0 {
             beginPlaybackSelection(track, queue: proposedQueue, recordHistory: recordHistory)
         } else {
@@ -208,7 +221,7 @@ final class PlayerStore: ObservableObject {
             audioEnvelope = nil
             envelopeTask?.cancel()
             if playbackURL.isFileURL {
-                envelopeTask = Task { [weak self] in
+                envelopeTask = Task(priority: .utility) { [weak self] in
                     guard let self else { return }
                     let analyzed = try? await self.envelopeAnalyzer.analyze(fileURL: playbackURL)
                     guard !Task.isCancelled, self.requestID == identifier else { return }
@@ -292,6 +305,10 @@ final class PlayerStore: ObservableObject {
     }
 
     func stop() {
+        lastAttemptedTrack = nil
+        seekID = nil
+        currentTime = 0
+        duration = 0
         requestID = UUID()
         recoveryTask?.cancel()
         recoveryTask = nil
@@ -349,10 +366,23 @@ final class PlayerStore: ObservableObject {
     }
 
     func seek(to time: TimeInterval) {
+        guard time.isFinite, let item = player.currentItem else { return }
         let target = min(max(time, 0), duration)
-        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        let identifier = UUID()
+        seekID = identifier
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.seekID == identifier, self.player.currentItem === item else { return }
+                self.seekID = nil
+            }
+        }
         currentTime = target
         updateNowPlayingInfo()
+    }
+
+    func retryPlayback() {
+        guard let track = currentTrack ?? lastAttemptedTrack else { return }
+        Task { await play(track, queue: nil, recoveryAttempt: 0, recordHistory: false) }
     }
 
     func next() {
@@ -413,10 +443,17 @@ final class PlayerStore: ObservableObject {
             guard let self else { return }
             defer { self.waveLoadingTask = nil }
             do {
-                let fetched = try await self.service.nextWaveTracks(after: anchor)
-                guard !Task.isCancelled, self.isWaveQueue else { return }
                 var existing = Set(self.queue.map(\.id))
-                let fresh = fetched.filter { existing.insert($0.id).inserted }
+                var fresh: [Track] = []
+                var cursor = anchor
+                for attempt in 0..<3 {
+                    let fetched = try await self.service.nextWaveTracks(after: cursor)
+                    guard !Task.isCancelled, self.isWaveQueue else { return }
+                    fresh = fetched.filter { existing.insert($0.id).inserted }
+                    if !fresh.isEmpty { break }
+                    if let last = fetched.last { cursor = last.id }
+                    if attempt < 2 { try await Task.sleep(for: .milliseconds(500)) }
+                }
                 self.queue.append(contentsOf: fresh)
                 if self.pendingWaveAdvance {
                     self.pendingWaveAdvance = false
@@ -430,6 +467,8 @@ final class PlayerStore: ObservableObject {
                 }
             } catch {
                 guard !Task.isCancelled else { return }
+                // A failed prefetch must not interrupt the track already playing.
+                guard self.pendingWaveAdvance else { return }
                 self.pendingWaveAdvance = false
                 self.isBuffering = false
                 self.errorMessage = "Не удалось продолжить Мою волну: \(error.localizedDescription)"
@@ -449,7 +488,8 @@ final class PlayerStore: ObservableObject {
     func reloadLyrics() {
         guard let currentTrack else { return }
         lyricsErrorMessage = nil
-        Task { await loadLyrics(for: currentTrack, requestID: requestID) }
+        let identifier = requestID
+        Task { await loadLyrics(for: currentTrack, requestID: identifier) }
     }
 
     private func loadLyrics(for track: Track, requestID identifier: UUID) async {
@@ -458,27 +498,17 @@ final class PlayerStore: ObservableObject {
             lyrics = cached
             return
         }
-        var serviceError: String?
         do {
-            if let fetched = try await service.lyrics(for: track), !fetched.lines.isEmpty {
-                guard requestID == identifier else { return }
-                lyrics = fetched
-                lyricsErrorMessage = nil
-                return
-            }
-        } catch is CancellationError { return }
-        catch { serviceError = error.localizedDescription }
-        do {
-            let fetched = try await lyricsSettings.fallbackLyrics(for: track)
+            let fetched = try await lyricsSettings.lyrics(for: track, service: service)
             guard requestID == identifier else { return }
             lyrics = fetched
             lyricsErrorMessage = fetched == nil
-                ? (serviceError.map { "Текст не найден. Яндекс: \($0)" } ?? "Текст не найден в доступных источниках.")
+                ? "Текст не найден в выбранных источниках."
                 : nil
         } catch is CancellationError { return }
         catch {
             guard requestID == identifier else { return }
-            lyricsErrorMessage = "Яндекс: \(serviceError ?? "текст недоступен"). Резерв: \(error.localizedDescription)"
+            lyricsErrorMessage = error.localizedDescription
         }
     }
 
@@ -693,11 +723,20 @@ final class PlayerStore: ObservableObject {
         ) { [weak self] time in
             Task { @MainActor in
                 guard let self else { return }
-                self.currentTime = time.seconds.isFinite ? max(time.seconds, 0) : 0
+                // Read the current item, not the timestamp captured before a track
+                // replacement or seek. A queued callback can belong to the old item.
+                guard self.seekID == nil, let item = self.player.currentItem, item.status == .readyToPlay else { return }
+                let seconds = item.currentTime().seconds
+                self.currentTime = seconds.isFinite ? max(seconds, 0) : 0
                 if let seconds = self.player.currentItem?.duration.seconds, seconds.isFinite, seconds > 0 {
-                    self.duration = seconds
+                    if abs(self.duration - seconds) > 0.1 { self.duration = seconds }
                 }
-                self.updateNowPlayingInfo()
+                // Now Playing extrapolates elapsed time from rate; publish only on
+                // play/pause/seek/track changes, not four dictionaries per second.
+                let line = self.activeLyricsLineIndex
+                if line != self.lastActivityLyricsIndex {
+                    self.refreshLiveActivity()
+                }
             }
         }
         endObserver = NotificationCenter.default.addObserver(
@@ -746,6 +785,7 @@ final class PlayerStore: ObservableObject {
     }
 
     private func updateNowPlayingInfo() {
+        refreshLiveActivity()
         guard let track = currentTrack else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
@@ -765,6 +805,16 @@ final class PlayerStore: ObservableObject {
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
+
+    func refreshLiveActivity() {
+        lastActivityLyricsIndex = activeLyricsLineIndex
+        LiveActivityController.shared.update(track: currentTrack, playing: isPlaying, time: currentTime, duration: duration, lyrics: lyrics)
+    }
+}
+
+@MainActor
+final class PlaybackClock: ObservableObject {
+    @Published var time: TimeInterval = 0
 }
 
 enum LyricsSynchronizer {

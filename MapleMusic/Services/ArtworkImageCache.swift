@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import ImageIO
 
 @MainActor
 final class ArtworkImageCache {
@@ -38,10 +39,18 @@ final class ArtworkImageCache {
             request.cachePolicy = .returnCacheDataElseLoad
             guard let (data, response) = try? await session.data(for: request),
                   let http = response as? HTTPURLResponse,
-                  (200 ..< 300).contains(http.statusCode),
-                  let image = UIImage(data: data)
+                  (200 ..< 300).contains(http.statusCode)
             else { return nil }
-            return image.preparingForDisplay() ?? image
+            return await Task.detached(priority: .utility) {
+                guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                      let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 900,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceShouldCacheImmediately: true
+                      ] as CFDictionary) else { return nil as UIImage? }
+                return UIImage(cgImage: image)
+            }.value
         }
         inFlight[url] = task
         let image = await task.value

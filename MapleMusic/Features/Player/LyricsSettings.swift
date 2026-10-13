@@ -1,6 +1,14 @@
 import Combine
 import Foundation
 
+enum LyricsSource: String, CaseIterable, Identifiable, Codable {
+    case service, lrclib, genius
+    var id: Self { self }
+    var title: String {
+        switch self { case .service: "Музыкальный сервис"; case .lrclib: "LRCLIB"; case .genius: "Genius" }
+    }
+}
+
 @MainActor
 final class LyricsSettings: ObservableObject {
     @Published var usesGeniusFallback: Bool {
@@ -8,12 +16,18 @@ final class LyricsSettings: ObservableObject {
     }
     @Published private(set) var hasGeniusToken = false
     @Published var errorMessage: String?
+    @Published var sourceOrder: [LyricsSource] {
+        didSet { UserDefaults.standard.set(sourceOrder.map(\.rawValue), forKey: "lyrics-source-order") }
+    }
 
     private let vault = GeniusTokenVault()
     private let client = GeniusLyricsClient()
     private let lrclib = LRCLIBLyricsClient()
 
     init() {
+        let saved = (UserDefaults.standard.stringArray(forKey: "lyrics-source-order") ?? []).compactMap(LyricsSource.init(rawValue:))
+        var seen = Set<LyricsSource>()
+        sourceOrder = (saved + LyricsSource.allCases).filter { seen.insert($0).inserted }
         usesGeniusFallback = UserDefaults.standard.bool(forKey: "lyrics-genius-fallback")
     }
 
@@ -55,6 +69,27 @@ final class LyricsSettings: ObservableObject {
         if let lyrics = try? await lrclib.lyrics(for: track), !lyrics.lines.isEmpty { return lyrics }
         guard usesGeniusFallback, let token = try await vault.load(), !token.isEmpty else { return nil }
         return try await client.lyrics(for: track, accessToken: token)
+    }
+
+    func lyrics(for track: Track, service: AnyMusicService) async throws -> Lyrics? {
+        var failures: [String] = []
+        for source in sourceOrder {
+            try Task.checkCancellation()
+            do {
+                let lyrics: Lyrics?
+                switch source {
+                case .service: lyrics = try await service.lyrics(for: track)
+                case .lrclib: lyrics = try await lrclib.lyrics(for: track)
+                case .genius:
+                    guard usesGeniusFallback, let token = try await vault.load(), !token.isEmpty else { continue }
+                    lyrics = try await client.lyrics(for: track, accessToken: token)
+                }
+                if let lyrics, !lyrics.lines.isEmpty { return lyrics }
+            } catch is CancellationError { throw CancellationError() }
+            catch { failures.append("\(source.title): \(error.localizedDescription)") }
+        }
+        if !failures.isEmpty { throw MusicServiceError.message(failures.joined(separator: "\n")) }
+        return nil
     }
 }
 

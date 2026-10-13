@@ -27,6 +27,7 @@ final class CatalogStore: ObservableObject {
     func bootstrap() async {
         isLoading = true
         defer { isLoading = false }
+        library = await offlineStore.cachedLibrary()
         async let homeLoad: Void = refreshHome()
         async let libraryLoad: Void = refreshLibrary()
         _ = await (homeLoad, libraryLoad)
@@ -72,6 +73,7 @@ final class CatalogStore: ObservableObject {
         do {
             let fetched = try await service.library()
             library = await libraryByMergingImportedTracks(fetched)
+            if let library { try? await offlineStore.cacheLibrary(library) }
             libraryErrorMessage = nil
         } catch {
             guard !Self.isCancellation(error) else { return }
@@ -141,9 +143,21 @@ final class CatalogStore: ObservableObject {
     func loadPlaylist(_ id: String) async -> Playlist? {
         do {
             let playlist = try await service.playlist(id: id)
-            return await playlistByMergingImportedTracks(playlist)
+            let merged = await playlistByMergingImportedTracks(playlist)
+            try? await offlineStore.cachePlaylist(merged)
+            return merged
         }
-        catch { errorMessage = error.localizedDescription; return nil }
+        catch {
+            if let cached = await offlineStore.cachedPlaylist(id) {
+                return await playlistByMergingImportedTracks(cached)
+            }
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+    func cachedPlaylist(_ id: String) async -> Playlist? {
+        guard let cached = await offlineStore.cachedPlaylist(id) else { return nil }
+        return await playlistByMergingImportedTracks(cached)
     }
     func loadAlbum(_ id: String) async throws -> Album {
         try await service.album(id: id)

@@ -10,7 +10,10 @@ struct RootView: View {
     @EnvironmentObject private var player: PlayerStore
     @EnvironmentObject private var catalog: CatalogStore
     @EnvironmentObject private var downloads: DownloadsStore
+    @EnvironmentObject private var appearance: AppearanceSettings
+    @EnvironmentObject private var developer: DeveloperSettings
     @State private var selection: AppTab = .home
+    @Namespace private var playerTransition
 
     var body: some View {
         Group {
@@ -20,12 +23,26 @@ struct RootView: View {
                 LegacyTabs(selection: $selection)
             }
         }
-        .sheet(isPresented: $player.isShowingNowPlaying) {
-            NowPlayingView()
-                .presentationCornerRadius(34)
+        .environment(\.playerTransition, playerTransition)
+        .onOpenURL { url in
+            if url.scheme == "maplemusic", ["player", "lyrics"].contains(url.host ?? ""), player.currentTrack != nil {
+                player.opensLyrics = url.host == "lyrics"
+                player.isShowingNowPlaying = true
+            }
+        }
+        .task(id: "\(player.currentTrack?.artwork.url?.absoluteString ?? "")|\(appearance.accent.rawValue)") {
+            await appearance.followArtwork(player.currentTrack?.artwork)
+        }
+        .fullScreenCover(isPresented: $player.isShowingNowPlaying) {
+            if #available(iOS 18.0, *) {
+                NowPlayingView()
+                    .navigationTransition(.zoom(sourceID: "mini-player", in: playerTransition))
+            } else {
+                NowPlayingView()
+            }
         }
         .alert("Музыкальный сервис", isPresented: Binding(
-            get: { catalog.errorMessage != nil || downloads.errorMessage != nil },
+            get: { !developer.usesNewRetryScreen && (catalog.errorMessage != nil || downloads.errorMessage != nil) },
             set: {
                 if !$0 {
                     catalog.errorMessage = nil
@@ -41,13 +58,33 @@ struct RootView: View {
             Text(downloads.errorMessage ?? catalog.errorMessage ?? "")
         }
         .alert("Ошибка воспроизведения", isPresented: Binding(
-            get: { player.errorMessage != nil },
+            get: { !developer.usesNewRetryScreen && player.errorMessage != nil },
             set: { if !$0 { player.errorMessage = nil } }
         )) {
             Button("ОК", role: .cancel) {}
         } message: {
             Text(player.errorMessage ?? "Неизвестная ошибка")
         }
+        .sheet(isPresented: Binding(
+            get: { developer.usesNewRetryScreen && (player.errorMessage != nil || catalog.errorMessage != nil || downloads.errorMessage != nil) },
+            set: { if !$0 { clearErrors() } }
+        )) {
+            let playbackError = player.errorMessage != nil
+            RetryScreen(
+                message: player.errorMessage ?? downloads.errorMessage ?? catalog.errorMessage ?? "Ошибка загрузки",
+                actionTitle: playbackError ? "Повторить воспроизведение" : "Обновить данные"
+            ) {
+                clearErrors()
+                if playbackError { player.retryPlayback() }
+                else { Task { await catalog.bootstrap(); await downloads.refresh() } }
+            }
+        }
+    }
+
+    private func clearErrors() {
+        player.errorMessage = nil
+        catalog.errorMessage = nil
+        downloads.errorMessage = nil
     }
 }
 
@@ -182,6 +219,7 @@ private struct ModernMiniPlayer: View {
             .padding(.vertical, 6)
         }
         }
+        .modifier(MiniPlayerTransitionSource())
         .simultaneousGesture(
             DragGesture(minimumDistance: 24).onEnded { value in
                 guard abs(value.translation.width) > 55,
@@ -259,6 +297,7 @@ private struct LegacyMiniPlayer: View {
         .adaptiveGlass(in: RoundedRectangle(cornerRadius: 15, style: .continuous), interactive: true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Сейчас играет \(track.title), \(track.artist.name)")
+        .modifier(MiniPlayerTransitionSource())
         .simultaneousGesture(
             DragGesture(minimumDistance: 24).onEnded { value in
                 guard abs(value.translation.width) > 55,
@@ -267,5 +306,25 @@ private struct LegacyMiniPlayer: View {
                 else { player.previous() }
             }
         )
+    }
+}
+
+private struct PlayerTransitionKey: EnvironmentKey {
+    static let defaultValue: Namespace.ID? = nil
+}
+
+extension EnvironmentValues {
+    var playerTransition: Namespace.ID? {
+        get { self[PlayerTransitionKey.self] }
+        set { self[PlayerTransitionKey.self] = newValue }
+    }
+}
+
+private struct MiniPlayerTransitionSource: ViewModifier {
+    @Environment(\.playerTransition) private var namespace
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *), let namespace {
+            content.matchedTransitionSource(id: "mini-player", in: namespace)
+        } else { content }
     }
 }

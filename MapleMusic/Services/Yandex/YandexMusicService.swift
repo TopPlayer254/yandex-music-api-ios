@@ -474,6 +474,9 @@ actor YandexMusicService: MusicService {
             }.joined(separator: "&").utf8)
         }
         let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            await DiagnosticLog.shared.record(path: path, status: http.statusCode, data: data)
+        }
         try Self.validate(response)
         let decoded = try JSONDecoder().decode(YandexJSON.self, from: data)
         if decoded["error"]["name"].string != nil { throw MusicServiceError.invalidResponse }

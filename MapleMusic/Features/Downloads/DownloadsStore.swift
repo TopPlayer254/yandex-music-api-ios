@@ -100,12 +100,7 @@ final class DownloadsStore: ObservableObject {
 
     private func save(_ track: Track, quality: AudioQuality) async throws {
         let asset = try await service.playbackAsset(for: track, quality: quality)
-        let lyrics: Lyrics?
-        if let serviceLyrics = try? await service.lyrics(for: track), !serviceLyrics.lines.isEmpty {
-            lyrics = serviceLyrics
-        } else {
-            lyrics = try? await lyricsSettings.fallbackLyrics(for: track)
-        }
+        let lyrics = try? await lyricsSettings.lyrics(for: track, service: service)
         try await offlineStore.save(track: track, asset: asset, lyrics: lyrics)
     }
 }

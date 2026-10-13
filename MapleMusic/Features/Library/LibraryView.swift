@@ -174,6 +174,7 @@ struct TrackListView: View {
 }
 
 struct PlaylistView: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     @EnvironmentObject private var appearance: AppearanceSettings
     @EnvironmentObject private var catalog: CatalogStore
     @EnvironmentObject private var player: PlayerStore
@@ -199,9 +200,12 @@ struct PlaylistView: View {
                             Text(description).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         }
                     }
-                    HStack(spacing: 10) {
+                    let actionLayout = typeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+                    actionLayout {
                         Button { if let first = playlist.tracks.first { Task { await player.play(first, queue: playlist.tracks) } } } label: {
                             Label("Воспроизвести", systemImage: "play.fill")
+                                .lineLimit(1).minimumScaleFactor(0.8)
                                 .frame(maxWidth: .infinity)
                         }
                         .tint(appearance.tint)
@@ -275,7 +279,10 @@ struct PlaylistView: View {
                 }
             }
         }
-        .task { loaded = await catalog.loadPlaylist(initialPlaylist.id) }
+        .task {
+            loaded = await catalog.cachedPlaylist(initialPlaylist.id)
+            if let fresh = await catalog.loadPlaylist(initialPlaylist.id) { loaded = fresh }
+        }
         .refreshable { loaded = await catalog.loadPlaylist(initialPlaylist.id) }
         .fileImporter(
             isPresented: $showsFileImporter,
@@ -493,15 +500,30 @@ private struct DownloadAllButton: View {
                     .frame(maxWidth: .infinity)
             } else {
                 Label("Скачать всё", systemImage: "arrow.down.circle")
+                    .lineLimit(1).minimumScaleFactor(0.8)
                     .frame(maxWidth: .infinity)
             }
         }
-        .adaptiveSecondaryButtonStyle()
+        .buttonStyle(PlaylistSecondaryButtonStyle())
         .disabled(
             tracks.isEmpty
                 || downloads.bulkProgress != nil
                 || tracks.filter(\.downloadAllowed).allSatisfy(downloads.isDownloaded)
         )
+    }
+}
+
+private struct PlaylistSecondaryButtonStyle: ButtonStyle {
+    @EnvironmentObject private var appearance: AppearanceSettings
+    @Environment(\.isEnabled) private var isEnabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundStyle(configuration.role == .destructive ? Color.red : appearance.tint)
+            .padding(.horizontal, 12).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(.quaternary, in: Capsule())
+            .opacity(!isEnabled ? 0.4 : (configuration.isPressed ? 0.65 : 1))
     }
 }
 
