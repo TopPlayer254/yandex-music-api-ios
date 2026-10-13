@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 struct WaveLaunchButton: View {
-    @ObservedObject var motion: WaveMotionStore
+    let motion: WaveMotionStore
     let artwork: Artwork
     let mood: WaveMoodEnergy
     let isPlaying: Bool
@@ -16,7 +16,7 @@ struct WaveLaunchButton: View {
 
     var body: some View {
         ZStack {
-            WaveArtworkSurface(image: artworkImage, mood: mood, intensity: isPlaying ? motion.level : 0)
+            WaveArtworkSurface(image: artworkImage, mood: mood, motion: motion, isPlaying: isPlaying)
 
             Button(action: action) {
                 HStack(spacing: 13) {
@@ -114,7 +114,9 @@ private struct WaveArtworkSurface: View {
     @State private var animationOrigin = Date()
     let image: UIImage?
     let mood: WaveMoodEnergy
-    let intensity: Float
+    @ObservedObject var motion: WaveMotionStore
+    let isPlaying: Bool
+    private var intensity: Float { isPlaying ? motion.level : 0 }
 
     var body: some View {
         let palette = palette

@@ -8,10 +8,7 @@ enum AppTab: Hashable {
 
 struct RootView: View {
     @EnvironmentObject private var player: PlayerStore
-    @EnvironmentObject private var catalog: CatalogStore
-    @EnvironmentObject private var downloads: DownloadsStore
     @EnvironmentObject private var appearance: AppearanceSettings
-    @EnvironmentObject private var developer: DeveloperSettings
     @State private var selection: AppTab = .home
     @Namespace private var playerTransition
 
@@ -41,8 +38,22 @@ struct RootView: View {
                 NowPlayingView()
             }
         }
+        .modifier(MusicErrorPresentation(isPlayer: false))
+    }
+}
+
+struct MusicErrorPresentation: ViewModifier {
+    @EnvironmentObject private var player: PlayerStore
+    @EnvironmentObject private var catalog: CatalogStore
+    @EnvironmentObject private var downloads: DownloadsStore
+    @EnvironmentObject private var developer: DeveloperSettings
+    let isPlayer: Bool
+    private var isActive: Bool { player.isShowingNowPlaying == isPlayer }
+
+    func body(content: Content) -> some View {
+        content
         .alert("Музыкальный сервис", isPresented: Binding(
-            get: { !developer.usesNewRetryScreen && (catalog.errorMessage != nil || downloads.errorMessage != nil) },
+            get: { isActive && !developer.usesNewRetryScreen && (catalog.errorMessage != nil || downloads.errorMessage != nil) },
             set: {
                 if !$0 {
                     catalog.errorMessage = nil
@@ -58,7 +69,7 @@ struct RootView: View {
             Text(downloads.errorMessage ?? catalog.errorMessage ?? "")
         }
         .alert("Ошибка воспроизведения", isPresented: Binding(
-            get: { !developer.usesNewRetryScreen && player.errorMessage != nil },
+            get: { isActive && !developer.usesNewRetryScreen && player.errorMessage != nil },
             set: { if !$0 { player.errorMessage = nil } }
         )) {
             Button("ОК", role: .cancel) {}
@@ -66,7 +77,7 @@ struct RootView: View {
             Text(player.errorMessage ?? "Неизвестная ошибка")
         }
         .sheet(isPresented: Binding(
-            get: { developer.usesNewRetryScreen && (player.errorMessage != nil || catalog.errorMessage != nil || downloads.errorMessage != nil) },
+            get: { isActive && developer.usesNewRetryScreen && (player.errorMessage != nil || catalog.errorMessage != nil || downloads.errorMessage != nil) },
             set: { if !$0 { clearErrors() } }
         )) {
             let playbackError = player.errorMessage != nil

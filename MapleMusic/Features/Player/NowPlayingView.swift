@@ -61,8 +61,12 @@ struct NowPlayingView: View {
             withAnimation(.easeOut(duration: reducesMotion ? 0 : 0.35)) { backgroundVisible = true }
         }
         .presentationDragIndicator(.hidden)
+        .modifier(MusicErrorPresentation(isPlayer: true))
         .onChange(of: player.currentTrack?.id) { _, trackID in
             if trackID == nil { dismiss() }
+        }
+        .onChange(of: player.opensLyrics) { _, requested in
+            if requested { page = .lyrics; player.opensLyrics = false }
         }
     }
 
@@ -410,12 +414,12 @@ struct ArtworkBackdrop: View {
 private struct LyricsView: View {
     @EnvironmentObject private var player: PlayerStore
 
-    var body: some View { TimedLyricsView(player: player, clock: player.clock) }
+    var body: some View { TimedLyricsView(player: player, clock: player.lyricsClock) }
 }
 
 private struct TimedLyricsView: View {
     @ObservedObject var player: PlayerStore
-    @ObservedObject var clock: PlaybackClock
+    @ObservedObject var clock: LyricsClock
 
     var body: some View {
         Group {
@@ -429,8 +433,8 @@ private struct TimedLyricsView: View {
                                         Text(line.text)
                                             .font(.title2.bold())
                                             .multilineTextAlignment(.leading)
-                                            .foregroundStyle(index == player.activeLyricsLineIndex ? .white : .white.opacity(0.38))
-                                            .scaleEffect(index == player.activeLyricsLineIndex ? 1 : 0.98, anchor: .leading)
+                                            .foregroundStyle(index == clock.index ? .white : .white.opacity(0.38))
+                                            .scaleEffect(index == clock.index ? 1 : 0.98, anchor: .leading)
                                     }
                                     .buttonStyle(.plain)
                                     .id(index)
@@ -457,7 +461,7 @@ private struct TimedLyricsView: View {
                         }
                         .padding(24)
                     }
-                    .onChange(of: player.activeLyricsLineIndex) { _, index in
+                    .onChange(of: clock.index) { _, index in
                         guard lyrics.isSynchronized else { return }
                         guard let index else { return }
                         withAnimation(.easeOut(duration: 0.35)) {
@@ -505,6 +509,29 @@ private struct QueueView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .safeAreaInset(edge: .top) {
+            HStack(spacing: 12) {
+                Button { player.isShuffling.toggle() } label: {
+                    Label("Перемешать", systemImage: "shuffle")
+                        .padding(12)
+                        .foregroundStyle(player.isShuffling ? appearance.accentText : .white)
+                        .background(player.isShuffling ? appearance.tint : .white.opacity(0.12), in: Capsule())
+                }
+                .accessibilityValue(player.isShuffling ? "Включено" : "Выключено")
+                Button { player.cycleRepeatMode() } label: {
+                    Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
+                        .frame(width: 44, height: 44)
+                        .foregroundStyle(player.repeatMode != .off ? appearance.accentText : .white)
+                        .background(player.repeatMode != .off ? appearance.tint : .white.opacity(0.12), in: Circle())
+                }
+                .accessibilityLabel("Повтор")
+                .accessibilityValue(player.repeatMode == .off ? "Выключен" : (player.repeatMode == .one ? "Один трек" : "Вся очередь"))
+                Spacer()
+            }
+            .font(.subheadline.weight(.semibold))
+            .buttonStyle(.plain)
+            .padding(.horizontal, 20)
+        }
     }
 }
 

@@ -504,26 +504,14 @@ private struct DownloadAllButton: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .buttonStyle(PlaylistSecondaryButtonStyle())
+        .adaptiveSecondaryButtonStyle()
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
         .disabled(
             tracks.isEmpty
                 || downloads.bulkProgress != nil
                 || tracks.filter(\.downloadAllowed).allSatisfy(downloads.isDownloaded)
         )
-    }
-}
-
-private struct PlaylistSecondaryButtonStyle: ButtonStyle {
-    @EnvironmentObject private var appearance: AppearanceSettings
-    @Environment(\.isEnabled) private var isEnabled
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundStyle(configuration.role == .destructive ? Color.red : appearance.tint)
-            .padding(.horizontal, 12).padding(.vertical, 12)
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .background(.quaternary, in: Capsule())
-            .opacity(!isEnabled ? 0.4 : (configuration.isPressed ? 0.65 : 1))
     }
 }
 

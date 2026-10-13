@@ -211,7 +211,7 @@ struct MarqueeText: View {
         .frame(height: height)
         .clipped()
         .onPreferenceChange(MarqueeTextWidthKey.self) { textWidth = $0 }
-        .task(id: "\(text)|\(Int(textWidth))|\(Int(containerWidth))") {
+        .task(id: "\(text)|\(Int(textWidth))|\(Int(containerWidth))|\(reducesMotion)") {
             offset = 0
             let overflow = max(textWidth - containerWidth, 0)
             guard overflow > 8, !reducesMotion else { return }
@@ -307,7 +307,7 @@ extension View {
     }
 
     func adaptiveProminentButtonStyle() -> some View {
-        buttonStyle(AccentActionButtonStyle())
+        modifier(PrimaryActionModifier())
     }
 
     @ViewBuilder
@@ -316,6 +316,21 @@ extension View {
             buttonStyle(.glass)
         } else {
             buttonStyle(.bordered)
+        }
+    }
+}
+
+private struct PrimaryActionModifier: ViewModifier {
+    @EnvironmentObject private var appearance: AppearanceSettings
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .foregroundStyle(appearance.accentText)
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+        } else {
+            content.buttonStyle(AccentActionButtonStyle())
         }
     }
 }

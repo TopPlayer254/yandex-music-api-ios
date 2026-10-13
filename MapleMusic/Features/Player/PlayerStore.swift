@@ -10,14 +10,15 @@ final class PlayerStore: ObservableObject {
     @Published private(set) var queue: [Track] = []
     @Published private(set) var isPlaying = false
     let clock = PlaybackClock()
+    let lyricsClock = LyricsClock()
     private(set) var currentTime: TimeInterval {
         get { clock.time }
-        set { clock.time = newValue }
+        set { clock.time = newValue; updateLyricsClock() }
     }
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var resolvedAsset: PlaybackAsset?
     @Published private(set) var lyrics: Lyrics? {
-        didSet { refreshLiveActivity() }
+        didSet { updateLyricsClock(); refreshLiveActivity() }
     }
     @Published private(set) var lyricsErrorMessage: String?
     @Published var preferredQuality: AudioQuality {
@@ -35,7 +36,7 @@ final class PlayerStore: ObservableObject {
         didSet { shuffledPlayedIDs = Set(playHistory.prefix(historyCursor + 1).map(\.id)) }
     }
     @Published var isShowingNowPlaying = false
-    var opensLyrics = false
+    @Published var opensLyrics = false
     private var lastActivityLyricsIndex: Int?
     @Published var errorMessage: String?
     @Published private(set) var isBuffering = false
@@ -128,6 +129,11 @@ final class PlayerStore: ObservableObject {
     var activeLyricsLineIndex: Int? {
         guard lyrics?.isSynchronized == true, let lines = lyrics?.lines, !lines.isEmpty else { return nil }
         return LyricsSynchronizer.activeLineIndex(at: currentTime, lines: lines)
+    }
+
+    private func updateLyricsClock() {
+        let index = activeLyricsLineIndex
+        if lyricsClock.index != index { lyricsClock.index = index }
     }
 
     func play(_ track: Track, queue proposedQueue: [Track]? = nil) async {
@@ -815,6 +821,11 @@ final class PlayerStore: ObservableObject {
 @MainActor
 final class PlaybackClock: ObservableObject {
     @Published var time: TimeInterval = 0
+}
+
+@MainActor
+final class LyricsClock: ObservableObject {
+    @Published var index: Int?
 }
 
 enum LyricsSynchronizer {
