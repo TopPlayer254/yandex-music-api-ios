@@ -80,7 +80,7 @@ private struct LyricWordRenderer: TextRenderer {
                     advances[attribute.index] = advance + width
                     let phase = LyricGlyphMotion.phase(wordProgress: progress, center: Double(advance + width / 2),
                                                        wordWidth: Double(widths[attribute.index, default: 0]))
-                    let lift = reducesMotion ? 0 : sin(phase * .pi)
+                    let lift = reducesMotion || phase <= 0 || phase >= 1 ? 0 : sin(phase * .pi)
                     var letter = context
                     letter.opacity *= 0.38 + 0.62 * phase
                     letter.translateBy(x: 0, y: -2 * lift)
