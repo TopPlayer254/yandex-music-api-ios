@@ -360,6 +360,7 @@ final class PlayerStore: ObservableObject {
             }
             return
         }
+        synchronizePlaybackClock()
         player.play()
         isPlaying = true
         updateNowPlayingInfo()
@@ -367,8 +368,15 @@ final class PlayerStore: ObservableObject {
 
     func pause() {
         player.pause()
+        synchronizePlaybackClock()
         isPlaying = false
         updateNowPlayingInfo()
+    }
+
+    private func synchronizePlaybackClock() {
+        guard seekID == nil, let item = player.currentItem, item.status == .readyToPlay else { return }
+        let seconds = item.currentTime().seconds
+        if seconds.isFinite { currentTime = max(seconds, 0) }
     }
 
     func seek(to time: TimeInterval) {
@@ -724,7 +732,7 @@ final class PlayerStore: ObservableObject {
             }
         }
         timeObserver = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
+            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
             Task { @MainActor in
@@ -738,7 +746,7 @@ final class PlayerStore: ObservableObject {
                     if abs(self.duration - seconds) > 0.1 { self.duration = seconds }
                 }
                 // Now Playing extrapolates elapsed time from rate; publish only on
-                // play/pause/seek/track changes, not four dictionaries per second.
+                // play/pause/seek/track changes, not on every clock sample.
                 let line = self.activeLyricsLineIndex
                 if line != self.lastActivityLyricsIndex {
                     self.refreshLiveActivity()
@@ -827,7 +835,7 @@ final class PlaybackClock: ObservableObject {
 
     func displayTime(at date: Date, playing: Bool) -> TimeInterval {
         // Stop extrapolating if AVPlayer stops sending samples (buffering/stall).
-        time + (playing ? min(max(date.timeIntervalSince(sampledAt), 0), 0.3) : 0)
+        time + (playing ? min(max(date.timeIntervalSince(sampledAt), 0), 0.15) : 0)
     }
 }
 

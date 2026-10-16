@@ -80,7 +80,7 @@ final class AppearanceAndWordLyricsTests: XCTestCase {
         let clock = PlaybackClock()
         clock.time = 5
         XCTAssertEqual(clock.displayTime(at: clock.sampledAt.addingTimeInterval(0.1), playing: true), 5.1, accuracy: 0.001)
-        XCTAssertEqual(clock.displayTime(at: clock.sampledAt.addingTimeInterval(10), playing: true), 5.3, accuracy: 0.001)
+        XCTAssertEqual(clock.displayTime(at: clock.sampledAt.addingTimeInterval(10), playing: true), 5.15, accuracy: 0.001)
         XCTAssertEqual(clock.displayTime(at: clock.sampledAt.addingTimeInterval(1), playing: false), 5)
         clock.time = 0
         XCTAssertEqual(clock.displayTime(at: clock.sampledAt, playing: true), 0)

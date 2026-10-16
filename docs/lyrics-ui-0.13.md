@@ -9,7 +9,8 @@ No code from these projects is incorporated. Exact visual parity is unverified.
   timed word, individual glyph lift/glow (not a hard clipping edge), native text wrapping.
 - iOS 17: discrete word highlighting. Untimed lyrics remain line-based on every OS.
 - Only the active word-timed line observes playback ticks. Interpolation stops on
-  pause and is bounded to 300 ms when samples stop; Reduce Motion disables lift/glow.
+  pause and is bounded to 150 ms when samples stop; Reduce Motion disables lift/glow.
+  AVPlayer time is resampled on pause/resume to avoid jumping back to an old clock sample.
 - The user's handheld video was inspected frame-by-frame for line transitions. It
   demonstrates line-level lyrics; the word animation follows their written description.
 - Enhanced LRC and gateway JSON words preserve timing in offline Codable lyrics.
