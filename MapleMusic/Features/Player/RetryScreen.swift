@@ -68,3 +68,16 @@ struct MusicErrorBanner: View {
         .background(Color(red: 0.79, green: 0.16, blue: 0.12).ignoresSafeArea(edges: .top))
     }
 }
+
+#Preview("Ошибка поверх контента") {
+    NavigationStack {
+        List {
+            Text("Моя волна")
+            Text("Музыка продолжает играть")
+        }
+        .navigationTitle("Главная")
+    }
+    .safeAreaInset(edge: .top, spacing: 0) {
+        MusicErrorBanner(title: "Не удалось загрузить следующий трек", open: {}, close: {})
+    }
+}

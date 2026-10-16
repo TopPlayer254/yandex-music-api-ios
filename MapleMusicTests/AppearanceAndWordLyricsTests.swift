@@ -64,6 +64,17 @@ final class AppearanceAndWordLyricsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([LyricsLine].self, from: data), timed)
     }
 
+    func testGlyphFadeTravelsLeftToRightWithoutHardClipping() {
+        XCTAssertEqual(LyricGlyphMotion.phase(wordProgress: 0, center: 5, wordWidth: 100), 0)
+        XCTAssertEqual(LyricGlyphMotion.phase(wordProgress: 1, center: 95, wordWidth: 100), 1)
+        let left = LyricGlyphMotion.phase(wordProgress: 0.5, center: 45, wordWidth: 100)
+        let right = LyricGlyphMotion.phase(wordProgress: 0.5, center: 65, wordWidth: 100)
+        XCTAssertGreaterThan(left, 0)
+        XCTAssertLessThan(left, 1)
+        XCTAssertGreaterThan(left, right)
+        XCTAssertEqual(LyricGlyphMotion.phase(wordProgress: 0.5, center: 0, wordWidth: 0), 0)
+    }
+
     @MainActor
     func testLyricClockInterpolationIsBoundedAndStopsOnPauseOrSeek() {
         let clock = PlaybackClock()

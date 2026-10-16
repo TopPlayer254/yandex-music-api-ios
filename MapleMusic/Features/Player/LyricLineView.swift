@@ -30,18 +30,18 @@ private struct TimedWordsView: View {
     @ObservedObject var clock: PlaybackClock
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !playing || reducesMotion || scenePhase != .active)) { timeline in
-            let time = clock.displayTime(at: timeline.date, playing: playing)
-            if #available(iOS 18.0, *) {
-                words.enumerated().reduce(Text("")) { result, pair in
-                    result + Text(pair.element.text).customAttribute(LyricWordAttribute(index: pair.offset, word: pair.element))
-                }
+        if #available(iOS 18.0, *) {
+            let text = words.enumerated().reduce(Text("")) { result, pair in
+                result + Text(pair.element.text).customAttribute(LyricWordAttribute(index: pair.offset, word: pair.element))
+            }
+            TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !playing || reducesMotion || scenePhase != .active)) { timeline in
+                text
                 .foregroundStyle(.white)
-                .textRenderer(LyricWordRenderer(time: time, reducesMotion: reducesMotion))
-            } else {
-                words.reduce(Text("")) { result, word in
-                    result + Text(word.text).foregroundColor(.white.opacity(word.progress(at: time) > 0 ? 1 : 0.38))
-                }
+                .textRenderer(LyricWordRenderer(time: clock.displayTime(at: timeline.date, playing: playing), reducesMotion: reducesMotion))
+            }
+        } else {
+            words.reduce(Text("")) { result, word in
+                result + Text(word.text).foregroundColor(.white.opacity(word.progress(at: clock.time) > 0 ? 1 : 0.38))
             }
         }
     }
@@ -65,7 +65,7 @@ private struct LyricWordRenderer: TextRenderer {
         for line in layout {
             for run in line {
                 if let attribute = run[LyricWordAttribute.self] {
-                    widths[attribute.index, default: 0] += run.typographicBounds.rect.width
+                    widths[attribute.index, default: 0] += run.reduce(CGFloat.zero) { $0 + $1.typographicBounds.rect.width }
                 }
             }
         }
@@ -74,27 +74,41 @@ private struct LyricWordRenderer: TextRenderer {
             for run in line {
                 guard let attribute = run[LyricWordAttribute.self] else { context.draw(run); continue }
                 let progress = attribute.word.progress(at: time)
-                let bounds = run.typographicBounds.rect
-                let advance = advances[attribute.index, default: 0]
-                advances[attribute.index] = advance + bounds.width
-                let reveal = min(max(CGFloat(progress) * widths[attribute.index, default: 0] - advance, 0), bounds.width)
-                var base = context
-                // Lift during the word, return without moving neighbouring text.
-                if !reducesMotion { base.translateBy(x: 0, y: -1.5 * sin(progress * .pi)) }
-                var dim = base
-                dim.opacity *= 0.38
-                dim.draw(run)
-                guard reveal > 0 else { continue }
-                var lit = base
-                lit.clip(to: Path(CGRect(x: bounds.minX, y: bounds.minY - 3, width: reveal, height: bounds.height + 6)))
-                if !reducesMotion, progress > 0, progress < 1 {
-                    var glow = lit
-                    glow.opacity *= 0.4
-                    glow.addFilter(.blur(radius: 3))
-                    glow.draw(run)
+                for glyph in run {
+                    let width = glyph.typographicBounds.rect.width
+                    let advance = advances[attribute.index, default: 0]
+                    advances[attribute.index] = advance + width
+                    let phase = LyricGlyphMotion.phase(wordProgress: progress, center: Double(advance + width / 2),
+                                                       wordWidth: Double(widths[attribute.index, default: 0]))
+                    let lift = reducesMotion ? 0 : sin(phase * .pi)
+                    var letter = context
+                    letter.opacity *= 0.38 + 0.62 * phase
+                    letter.translateBy(x: 0, y: -2 * lift)
+                    if lift > 0 {
+                        var glow = letter
+                        glow.opacity *= 0.2 * lift
+                        glow.addFilter(.blur(radius: 3))
+                        glow.draw(glyph)
+                    }
+                    letter.draw(glyph)
                 }
-                lit.draw(run)
             }
         }
     }
+}
+
+#Preview("Пословная строка — пауза") {
+    let clock = PlaybackClock()
+    let _ = { clock.time = 1.35 }()
+    LyricLineView(
+        line: LyricsLine(time: 0, text: "Моя волна с тобой", words: [
+            LyricsWord(text: "Моя ", start: 0, end: 0.8),
+            LyricsWord(text: "волна ", start: 0.8, end: 2),
+            LyricsWord(text: "с тобой", start: 2, end: 3.5)
+        ]),
+        active: true, playing: false, clock: clock
+    )
+    .font(.title2.bold())
+    .padding(28)
+    .background(.black)
 }

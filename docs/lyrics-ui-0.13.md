@@ -5,10 +5,13 @@ The GitHub search found Apple-Music-style recreations (AMLL and
 HuangRunHua/Apple-Music-Lyric-Animation), not a verified IPA animation disassembly.
 No code from these projects is incorporated. Exact visual parity is unverified.
 
-- Native TextRenderer on iOS 18+: timed word fill, subtle lift/glow, native text wrapping.
+- Native TextRenderer on iOS 18+: a soft left-to-right glyph-opacity wave within each
+  timed word, individual glyph lift/glow (not a hard clipping edge), native text wrapping.
 - iOS 17: discrete word highlighting. Untimed lyrics remain line-based on every OS.
 - Only the active word-timed line observes playback ticks. Interpolation stops on
   pause and is bounded to 300 ms when samples stop; Reduce Motion disables lift/glow.
+- The user's handheld video was inspected frame-by-frame for line transitions. It
+  demonstrates line-level lyrics; the word animation follows their written description.
 - Enhanced LRC and gateway JSON words preserve timing in offline Codable lyrics.
 - Player album header centers short labels, retaining marquee for overflow.
 - Primary glass actions receive explicit fill tint; standalone tint and button labels
