@@ -46,3 +46,26 @@ Minimal playback response:
 ```
 
 Lyrics lines require UUID `id`, seconds `time`, and UTF-8 `text`.
+
+Optional `words` enables word-by-word lyrics. Each entry has `text` (including its
+original trailing spaces), `start` and optional `end`, in absolute playback seconds.
+The concatenated word texts must equal the line's `text`. Without `end`, highlighting
+is discrete at `start`; without `words`, the client uses line-level synchronization.
+Old cached responses remain compatible. Example line:
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000001",
+  "time": 10,
+  "text": "Моя волна",
+  "words": [
+    { "text": "Моя ", "start": 10, "end": 10.5 },
+    { "text": "волна", "start": 10.5, "end": 12 }
+  ]
+}
+```
+
+The Yandex/LRCLIB LRC path also understands Enhanced LRC word markers such as
+`[00:10.00]<00:10.00>Моя <00:10.50>волна<00:12.00>`. This does not imply that either
+service supplies word timing for a particular song. Genius plain text cannot supply
+real word synchronization. Live Activities continue to update per line, not per frame.

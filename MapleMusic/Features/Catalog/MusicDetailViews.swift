@@ -144,7 +144,6 @@ struct AlbumDetailView: View {
                     Label("Воспроизвести", systemImage: "play.fill")
                         .frame(maxWidth: .infinity)
                 }
-                .tint(appearance.tint)
                 .adaptiveProminentButtonStyle()
                 .disabled(album.tracks.isEmpty)
 

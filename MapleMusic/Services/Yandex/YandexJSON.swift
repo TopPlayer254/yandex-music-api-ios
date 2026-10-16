@@ -102,6 +102,7 @@ enum YandexJSON: Decodable, Sendable {
 enum LRCParser {
     static func parse(_ text: String) -> [LyricsLine] {
         guard let pattern = try? NSRegularExpression(pattern: #"\[(\d+):(\d+(?:\.\d+)?)\]"#) else { return [] }
+        let wordPattern = try? NSRegularExpression(pattern: #"<(\d+):(\d+(?:\.\d+)?)>"#)
         var lines: [LyricsLine] = []
         let offsetPattern = try? NSRegularExpression(pattern: #"\[offset:([+-]?\d+)\]"#)
         var offset: Double = 0
@@ -110,11 +111,35 @@ enum LRCParser {
         for raw in text.components(separatedBy: .newlines) {
             let matches = pattern.matches(in: raw, range: NSRange(raw.startIndex..., in: raw))
             guard let last = matches.last, let tail = Range(last.range, in: raw) else { continue }
-            let words = String(raw[tail.upperBound...]).trimmingCharacters(in: .whitespaces)
+            let body = String(raw[tail.upperBound...]).trimmingCharacters(in: .whitespaces)
+            let markers = wordPattern?.matches(in: body, range: NSRange(body.startIndex..., in: body)) ?? []
+            func timestamp(_ match: NSTextCheckingResult, in source: String) -> Double? {
+                guard let mRange = Range(match.range(at: 1), in: source),
+                      let sRange = Range(match.range(at: 2), in: source),
+                      let m = Double(source[mRange]), let s = Double(source[sRange]), s < 60 else { return nil }
+                return m * 60 + s
+            }
+            let firstTime = matches.first.flatMap { timestamp($0, in: raw) } ?? 0
+            let plainText = wordPattern?.stringByReplacingMatches(in: body, range: NSRange(body.startIndex..., in: body), withTemplate: "") ?? body
             for match in matches {
-                guard let minutes = Range(match.range(at: 1), in: raw), let seconds = Range(match.range(at: 2), in: raw),
-                      let m = Double(raw[minutes]), let s = Double(raw[seconds]) else { continue }
-                lines.append(LyricsLine(time: max(0, m * 60 + s + offset), text: words))
+                guard let lineTime = timestamp(match, in: raw) else { continue }
+                let shift = lineTime - firstTime + offset
+                var words: [LyricsWord] = []
+                var valid = true
+                for (i, marker) in markers.enumerated() {
+                    guard let range = Range(marker.range, in: body), let start = timestamp(marker, in: body) else { valid = false; break }
+                    let next = i + 1 < markers.count ? markers[i + 1] : nil
+                    let end = next.flatMap { timestamp($0, in: body) }
+                    if let end, end < start { valid = false; break }
+                    let upper = next.flatMap { Range($0.range, in: body)?.lowerBound } ?? body.endIndex
+                    let text = String(body[range.upperBound..<upper])
+                    if !text.isEmpty {
+                        words.append(LyricsWord(text: text, start: max(0, start + shift), end: end.map { max(0, $0 + shift) }))
+                    }
+                }
+                // Do not discard untimed prefixes, or invent word timing for plain LRC.
+                let timedWords = valid && !words.isEmpty && words.map(\.text).joined() == plainText ? words : nil
+                lines.append(LyricsLine(time: max(0, lineTime + offset), text: plainText, words: timedWords))
             }
         }
         return lines.sorted { $0.time < $1.time }

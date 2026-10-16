@@ -48,12 +48,26 @@ struct MusicErrorPresentation: ViewModifier {
     @EnvironmentObject private var downloads: DownloadsStore
     @EnvironmentObject private var developer: DeveloperSettings
     let isPlayer: Bool
+    @State private var selectedError: PresentedMusicError?
     private var isActive: Bool { player.isShowingNowPlaying == isPlayer }
+    // An existing screen/playback session must not be interrupted by a modal.
+    private var hasContent: Bool { player.currentTrack != nil || catalog.home != nil || catalog.library != nil }
+    private var pendingError: PresentedMusicError? {
+        if let message = player.errorMessage { return PresentedMusicError(message: message, kind: .playback) }
+        if let message = downloads.errorMessage { return PresentedMusicError(message: message, kind: .download) }
+        if let message = catalog.errorMessage { return PresentedMusicError(message: message, kind: .catalog) }
+        return nil
+    }
 
     func body(content: Content) -> some View {
         content
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if isActive, hasContent, let error = pendingError {
+                MusicErrorBanner(title: error.title, open: { selectedError = error }, close: { clear(error) })
+            }
+        }
         .alert("Музыкальный сервис", isPresented: Binding(
-            get: { isActive && !developer.usesNewRetryScreen && (catalog.errorMessage != nil || downloads.errorMessage != nil) },
+            get: { isActive && !hasContent && !developer.usesNewRetryScreen && (catalog.errorMessage != nil || downloads.errorMessage != nil) },
             set: {
                 if !$0 {
                     catalog.errorMessage = nil
@@ -69,33 +83,51 @@ struct MusicErrorPresentation: ViewModifier {
             Text(downloads.errorMessage ?? catalog.errorMessage ?? "")
         }
         .alert("Ошибка воспроизведения", isPresented: Binding(
-            get: { isActive && !developer.usesNewRetryScreen && player.errorMessage != nil },
+            get: { isActive && !hasContent && !developer.usesNewRetryScreen && player.errorMessage != nil },
             set: { if !$0 { player.errorMessage = nil } }
         )) {
             Button("ОК", role: .cancel) {}
         } message: {
             Text(player.errorMessage ?? "Неизвестная ошибка")
         }
-        .sheet(isPresented: Binding(
-            get: { isActive && developer.usesNewRetryScreen && (player.errorMessage != nil || catalog.errorMessage != nil || downloads.errorMessage != nil) },
-            set: { if !$0 { clearErrors() } }
-        )) {
-            let playbackError = player.errorMessage != nil
+        .onChange(of: "\(isActive)|\(hasContent)|\(developer.usesNewRetryScreen)|\(pendingError?.id ?? "")", initial: true) { _, _ in
+            guard isActive, !hasContent, developer.usesNewRetryScreen, selectedError == nil else { return }
+            selectedError = pendingError
+        }
+        .sheet(item: $selectedError) { error in
             RetryScreen(
-                message: player.errorMessage ?? downloads.errorMessage ?? catalog.errorMessage ?? "Ошибка загрузки",
-                actionTitle: playbackError ? "Повторить воспроизведение" : "Обновить данные"
+                message: error.message,
+                actionTitle: error.kind == .playback ? "Повторить воспроизведение" : (error.kind == .download ? "Понятно" : "Обновить данные")
             ) {
-                clearErrors()
-                if playbackError { player.retryPlayback() }
-                else { Task { await catalog.bootstrap(); await downloads.refresh() } }
+                clear(error)
+                if error.kind == .playback { player.retryPlayback() }
+                else if error.kind == .catalog { Task { await catalog.bootstrap() } }
+                // Downloads are retried explicitly by the user; refreshing the manifest
+                // is not a retry and must not be labelled as one.
             }
         }
     }
 
-    private func clearErrors() {
-        player.errorMessage = nil
-        catalog.errorMessage = nil
-        downloads.errorMessage = nil
+    private func clear(_ error: PresentedMusicError) {
+        switch error.kind {
+        case .playback: if player.errorMessage == error.message { player.errorMessage = nil }
+        case .download: if downloads.errorMessage == error.message { downloads.errorMessage = nil }
+        case .catalog: if catalog.errorMessage == error.message { catalog.errorMessage = nil }
+        }
+    }
+}
+
+private struct PresentedMusicError: Identifiable {
+    enum Kind: String { case playback, download, catalog }
+    let message: String
+    let kind: Kind
+    var id: String { kind.rawValue + message }
+    var title: String {
+        switch kind {
+        case .playback: "Не удалось воспроизвести"
+        case .download: "Ошибка загрузки"
+        case .catalog: "Ошибка музыкального сервиса"
+        }
     }
 }
 

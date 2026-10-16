@@ -260,11 +260,14 @@ struct LyricsLine: Codable, Hashable, Identifiable, Sendable {
     let id: UUID
     let time: TimeInterval
     let text: String
+    /// Absent in older caches and sources with only line-level timing.
+    let words: [LyricsWord]?
 
-    init(id: UUID = UUID(), time: TimeInterval, text: String) {
+    init(id: UUID = UUID(), time: TimeInterval, text: String, words: [LyricsWord]? = nil) {
         self.id = id
         self.time = time
         self.text = text
+        self.words = words
     }
 }
 

@@ -150,7 +150,7 @@ private struct DeveloperSettingsView: View {
                     .onChange(of: developerSettings.usesLiveActivity) { _, _ in player.refreshLiveActivity() }
                 Text(liveActivity.status).font(.caption).foregroundStyle(.secondary)
             } footer: {
-                Text("Диагностика показывает ответ API с удалёнными секретами, только в памяти текущего сеанса. Она не перехватывает аварийное завершение iOS. New Retry screen заменяет уведомления об ошибках экраном повторной попытки.")
+                Text("Диагностика показывает ответ API с удалёнными секретами, только в памяти текущего сеанса. Она не перехватывает аварийное завершение iOS. New Retry screen открывает повторную попытку, если экран не загрузился. При доступном контенте ошибка показывается красным баннером; нажмите его для подробностей.")
             }
         }
         .navigationTitle("Разработчик")

@@ -94,14 +94,23 @@ final class AppearanceSettings: ObservableObject {
         interfaceStyle = InterfaceStyleChoice(
             rawValue: UserDefaults.standard.string(forKey: "interface-style") ?? ""
         ) ?? .automatic
-        customRed = UserDefaults.standard.object(forKey: "accent-custom-red") as? Double ?? 1
-        customGreen = UserDefaults.standard.object(forKey: "accent-custom-green") as? Double ?? 0.8
-        customBlue = UserDefaults.standard.object(forKey: "accent-custom-blue") as? Double ?? 0
+        customRed = (UserDefaults.standard.object(forKey: "accent-custom-red") as? Double) ?? 1
+        customGreen = (UserDefaults.standard.object(forKey: "accent-custom-green") as? Double) ?? 0.8
+        customBlue = (UserDefaults.standard.object(forKey: "accent-custom-blue") as? Double) ?? 0
+    }
+
+    var buttonTint: Color {
+        if accent == .albumCover { return albumTint }
+        return accent == .custom ? Color(red: customRed, green: customGreen, blue: customBlue) : accent.color
     }
 
     var tint: Color {
-        if accent == .albumCover { return albumTint }
-        return accent == .custom ? Color(red: customRed, green: customGreen, blue: customBlue) : accent.color
+        let raw = UIColor(buttonTint)
+        return Color(uiColor: UIColor { traits in
+            let rgb = ContrastRGB(raw.resolvedColor(with: traits))
+            let background: ContrastRGB = traits.userInterfaceStyle == .dark ? .black : .white
+            return rgb.readable(on: background).uiColor
+        })
     }
 
     func followArtwork(_ artwork: Artwork?) async {
@@ -138,13 +147,17 @@ final class AppearanceSettings: ObservableObject {
     }
 
     var accentText: Color {
-        let color = UIColor(tint)
-        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
-        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return .black }
-        let luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
-        if luminance < 0.36 { return .white }
-        return Color(red: Double(red) * 0.22, green: Double(green) * 0.22, blue: Double(blue) * 0.22)
+        Color(uiColor: ContrastRGB(UIColor(buttonTint)).buttonLabel.uiColor)
     }
+}
+
+private extension ContrastRGB {
+    init(_ color: UIColor) {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        self.init(red: Double(r), green: Double(g), blue: Double(b))
+    }
+    var uiColor: UIColor { UIColor(red: red, green: green, blue: blue, alpha: 1) }
 }
 
 struct AccentActionButtonStyle: ButtonStyle {
@@ -159,7 +172,7 @@ struct AccentActionButtonStyle: ButtonStyle {
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
             .frame(minHeight: 50)
-            .background(configuration.role == .destructive ? Color.red : appearance.tint, in: Capsule())
+            .background(configuration.role == .destructive ? Color.red : appearance.buttonTint, in: Capsule())
             .opacity(!isEnabled ? 0.4 : (configuration.isPressed ? 0.75 : 1))
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
     }
@@ -179,16 +192,18 @@ struct MarqueeText: View {
     let font: Font
     let color: Color
     let height: CGFloat
+    var alignment: Alignment = .leading
 
     @State private var textWidth: CGFloat = 0
     @State private var containerWidth: CGFloat = 0
     @State private var offset: CGFloat = 0
 
-    init(_ text: String, font: Font, color: Color, height: CGFloat) {
+    init(_ text: String, font: Font, color: Color, height: CGFloat, alignment: Alignment = .leading) {
         self.text = text
         self.font = font
         self.color = color
         self.height = height
+        self.alignment = alignment
     }
 
     var body: some View {
@@ -205,6 +220,7 @@ struct MarqueeText: View {
                 }
                 .offset(x: offset)
                 .frame(maxHeight: .infinity, alignment: .center)
+                .frame(width: proxy.size.width, alignment: textWidth > proxy.size.width ? .leading : alignment)
                 .onAppear { containerWidth = proxy.size.width }
                 .onChange(of: proxy.size.width) { _, width in containerWidth = width }
         }
@@ -327,6 +343,7 @@ private struct PrimaryActionModifier: ViewModifier {
             content
                 .foregroundStyle(appearance.accentText)
                 .buttonStyle(.glassProminent)
+                .tint(appearance.buttonTint)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
         } else {

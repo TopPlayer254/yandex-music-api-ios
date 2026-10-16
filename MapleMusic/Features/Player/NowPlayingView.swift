@@ -87,7 +87,8 @@ struct NowPlayingView: View {
                     player.currentTrack?.albumTitle ?? "Maple Music",
                     font: .caption,
                     color: .white,
-                    height: 16
+                    height: 16,
+                    alignment: .center
                 )
             }
             .frame(maxWidth: .infinity)
@@ -167,9 +168,9 @@ struct NowPlayingView: View {
                 Button { Task { await catalog.toggleFavorite(track) } } label: {
                     Image(systemName: catalog.isFavorite(track) ? "heart.fill" : "heart")
                         .font(.title3)
-                        .foregroundStyle(catalog.isFavorite(track) ? appearance.tint : .white)
+                        .foregroundStyle(catalog.isFavorite(track) ? appearance.accentText : .white)
                         .frame(width: 40, height: 40)
-                        .background(.white.opacity(catalog.isFavorite(track) ? 0.16 : 0), in: Circle())
+                        .background(catalog.isFavorite(track) ? appearance.buttonTint : .clear, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(catalog.isFavorite(track) ? "Убрать из любимого" : "Добавить в любимое")
@@ -226,8 +227,8 @@ struct NowPlayingView: View {
             Button { page = page == .lyrics ? .player : .lyrics } label: {
                 Image(systemName: "quote.bubble")
                     .frame(width: 44, height: 44)
-                    .foregroundStyle(page == .lyrics ? appearance.tint : .white)
-                    .background(.white.opacity(page == .lyrics ? 0.16 : 0), in: RoundedRectangle(cornerRadius: 12))
+                    .foregroundStyle(page == .lyrics ? appearance.accentText : .white)
+                    .background(page == .lyrics ? appearance.buttonTint : .clear, in: RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Текст песни")
@@ -240,8 +241,8 @@ struct NowPlayingView: View {
             Button { page = page == .queue ? .player : .queue } label: {
                 Image(systemName: "list.bullet")
                     .frame(width: 44, height: 44)
-                    .foregroundStyle(page == .queue ? appearance.tint : .white)
-                    .background(.white.opacity(page == .queue ? 0.16 : 0), in: RoundedRectangle(cornerRadius: 12))
+                    .foregroundStyle(page == .queue ? appearance.accentText : .white)
+                    .background(page == .queue ? appearance.buttonTint : .clear, in: RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Очередь")
@@ -418,6 +419,7 @@ private struct LyricsView: View {
 }
 
 private struct TimedLyricsView: View {
+    @Environment(\.accessibilityReduceMotion) private var reducesMotion
     @ObservedObject var player: PlayerStore
     @ObservedObject var clock: LyricsClock
 
@@ -430,11 +432,14 @@ private struct TimedLyricsView: View {
                             ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
                                 if lyrics.isSynchronized {
                                     Button { player.seek(to: line.time) } label: {
-                                        Text(line.text)
+                                        LyricLineView(line: line, active: index == clock.index,
+                                                      playing: player.isPlaying && !player.isBuffering,
+                                                      clock: player.clock)
                                             .font(.title2.bold())
                                             .multilineTextAlignment(.leading)
-                                            .foregroundStyle(index == clock.index ? .white : .white.opacity(0.38))
-                                            .scaleEffect(index == clock.index ? 1 : 0.98, anchor: .leading)
+                                            .scaleEffect(reducesMotion || index == clock.index ? 1 : 0.96, anchor: .leading)
+                                            .blur(radius: reducesMotion || index == clock.index ? 0 : 0.7)
+                                            .animation(reducesMotion ? nil : .spring(response: 0.55, dampingFraction: 0.88), value: clock.index)
                                     }
                                     .buttonStyle(.plain)
                                     .id(index)
@@ -461,10 +466,10 @@ private struct TimedLyricsView: View {
                         }
                         .padding(24)
                     }
-                    .onChange(of: clock.index) { _, index in
+                    .onChange(of: clock.index, initial: true) { _, index in
                         guard lyrics.isSynchronized else { return }
                         guard let index else { return }
-                        withAnimation(.easeOut(duration: 0.35)) {
+                        withAnimation(reducesMotion ? nil : .spring(response: 0.65, dampingFraction: 0.9)) {
                             proxy.scrollTo(index, anchor: .center)
                         }
                     }
@@ -515,14 +520,14 @@ private struct QueueView: View {
                     Label("Перемешать", systemImage: "shuffle")
                         .padding(12)
                         .foregroundStyle(player.isShuffling ? appearance.accentText : .white)
-                        .background(player.isShuffling ? appearance.tint : .white.opacity(0.12), in: Capsule())
+                        .background(player.isShuffling ? appearance.buttonTint : .white.opacity(0.12), in: Capsule())
                 }
                 .accessibilityValue(player.isShuffling ? "Включено" : "Выключено")
                 Button { player.cycleRepeatMode() } label: {
                     Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
                         .frame(width: 44, height: 44)
                         .foregroundStyle(player.repeatMode != .off ? appearance.accentText : .white)
-                        .background(player.repeatMode != .off ? appearance.tint : .white.opacity(0.12), in: Circle())
+                        .background(player.repeatMode != .off ? appearance.buttonTint : .white.opacity(0.12), in: Circle())
                 }
                 .accessibilityLabel("Повтор")
                 .accessibilityValue(player.repeatMode == .off ? "Выключен" : (player.repeatMode == .one ? "Один трек" : "Вся очередь"))

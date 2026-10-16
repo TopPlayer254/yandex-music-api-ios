@@ -820,7 +820,15 @@ final class PlayerStore: ObservableObject {
 
 @MainActor
 final class PlaybackClock: ObservableObject {
-    @Published var time: TimeInterval = 0
+    @Published var time: TimeInterval = 0 {
+        didSet { sampledAt = Date() }
+    }
+    private(set) var sampledAt = Date()
+
+    func displayTime(at date: Date, playing: Bool) -> TimeInterval {
+        // Stop extrapolating if AVPlayer stops sending samples (buffering/stall).
+        time + (playing ? min(max(date.timeIntervalSince(sampledAt), 0), 0.3) : 0)
+    }
 }
 
 @MainActor

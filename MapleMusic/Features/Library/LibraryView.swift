@@ -136,7 +136,6 @@ struct TrackListView: View {
                             .frame(maxWidth: .infinity)
                             .font(.headline)
                     }
-                    .tint(appearance.tint)
                     .adaptiveProminentButtonStyle()
 
                     if showsDownloadAll {
@@ -208,7 +207,6 @@ struct PlaylistView: View {
                                 .lineLimit(1).minimumScaleFactor(0.8)
                                 .frame(maxWidth: .infinity)
                         }
-                        .tint(appearance.tint)
                         .adaptiveProminentButtonStyle()
 
                         DownloadAllButton(tracks: playlist.tracks)
