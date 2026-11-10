@@ -64,7 +64,28 @@ actor OfflineStore {
             .flatMap { try? decoder.decode(ImportedPlaylists.self, from: $0) } ?? ImportedPlaylists()
     }
 
-    func localLyrics(for trackID: String) -> Lyrics? { manifest.entries[trackID]?.lyrics }
+    func localLyrics(for trackID: String) -> Lyrics? {
+        if let data = try? Data(contentsOf: lyricsURL(trackID)), let lyrics = try? JSONDecoder().decode(Lyrics.self, from: data) { return lyrics }
+        return manifest.entries[trackID]?.lyrics
+    }
+
+    private func lyricsURL(_ id: String) -> URL {
+        let key = SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+        return root.appendingPathComponent("Lyrics", isDirectory: true).appendingPathComponent(key + ".json")
+    }
+
+    func cacheLyrics(_ lyrics: Lyrics) throws {
+        let url = lyricsURL(lyrics.trackID)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(lyrics).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    func clearLyrics() throws {
+        let directory = root.appendingPathComponent("Lyrics", isDirectory: true)
+        if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) }
+        for key in Array(manifest.entries.keys) { manifest.entries[key]?.lyrics = nil }
+        try persistManifest()
+    }
 
     // Snapshots share the audio account partition, never the global URL cache.
     func cachedLibrary() -> MusicLibrary? {
@@ -281,6 +302,7 @@ actor OfflineStore {
     }
 
     func removeAll() throws {
+        for entry in manifest.entries.values { if let lyrics = entry.lyrics { try cacheLyrics(lyrics) } }
         for entry in manifest.entries.values {
             let target = root.appendingPathComponent(entry.relativePath)
             guard isInsideRoot(target) else { throw MusicServiceError.offlineUnavailable }

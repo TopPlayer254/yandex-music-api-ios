@@ -11,6 +11,7 @@ final class PlayerStore: ObservableObject {
     @Published private(set) var isPlaying = false
     let clock = PlaybackClock()
     let lyricsClock = LyricsClock()
+    let haptics = MusicHapticsController()
     private(set) var currentTime: TimeInterval {
         get { clock.time }
         set { clock.time = newValue; updateLyricsClock() }
@@ -38,6 +39,7 @@ final class PlayerStore: ObservableObject {
     @Published var isShowingNowPlaying = false
     @Published var opensLyrics = false
     private var lastActivityLyricsIndex: Int?
+    private var lyricsGeneration = 0
     @Published var errorMessage: String?
     @Published private(set) var isBuffering = false
     let waveMotion = WaveMotionStore()
@@ -104,6 +106,7 @@ final class PlayerStore: ObservableObject {
         configureObservers()
         configureRemoteCommands()
         configureNetworkMonitor()
+        haptics.changed = { [weak self] in self?.refreshHaptics() }
     }
 
     deinit {
@@ -235,6 +238,7 @@ final class PlayerStore: ObservableObject {
                 }
             }
             prepareAudioSession()
+            haptics.prepare(file: playbackURL)
             player.play()
             isPlaying = true
             updateNowPlayingInfo()
@@ -275,6 +279,7 @@ final class PlayerStore: ObservableObject {
     }
 
     private func beginPlaybackSelection(_ track: Track, queue proposedQueue: [Track]?, recordHistory: Bool) {
+        haptics.reset()
         player.pause()
         player.replaceCurrentItem(with: nil)
         envelopeTask?.cancel()
@@ -311,6 +316,7 @@ final class PlayerStore: ObservableObject {
     }
 
     func stop() {
+        haptics.reset()
         lastAttemptedTrack = nil
         seekID = nil
         currentTime = 0
@@ -507,14 +513,18 @@ final class PlayerStore: ObservableObject {
     }
 
     private func loadLyrics(for track: Track, requestID identifier: UUID) async {
+        let generation = lyricsGeneration
         if let cached = await offlineStore.localLyrics(for: track.id), !cached.lines.isEmpty {
-            guard requestID == identifier else { return }
+            guard requestID == identifier, generation == lyricsGeneration else { return }
             lyrics = cached
             return
         }
         do {
             let fetched = try await lyricsSettings.lyrics(for: track, service: service)
             guard requestID == identifier else { return }
+            guard generation == lyricsGeneration else { return }
+            if let fetched { try? await offlineStore.cacheLyrics(fetched) }
+            guard generation == lyricsGeneration, requestID == identifier else { return }
             lyrics = fetched
             lyricsErrorMessage = fetched == nil
                 ? "Текст не найден в выбранных источниках."
@@ -742,6 +752,7 @@ final class PlayerStore: ObservableObject {
                 guard self.seekID == nil, let item = self.player.currentItem, item.status == .readyToPlay else { return }
                 let seconds = item.currentTime().seconds
                 self.currentTime = seconds.isFinite ? max(seconds, 0) : 0
+                self.haptics.tick(time: self.currentTime, playing: self.isPlaying && !self.isBuffering, isrc: self.currentTrack?.isrc)
                 if let seconds = self.player.currentItem?.duration.seconds, seconds.isFinite, seconds > 0 {
                     if abs(self.duration - seconds) > 0.1 { self.duration = seconds }
                 }
@@ -799,6 +810,7 @@ final class PlayerStore: ObservableObject {
     }
 
     private func updateNowPlayingInfo() {
+        haptics.tick(time: currentTime, playing: isPlaying && !isBuffering, isrc: currentTrack?.isrc)
         refreshLiveActivity()
         guard let track = currentTrack else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
@@ -817,12 +829,33 @@ final class PlayerStore: ObservableObject {
         if let nowPlayingArtwork {
             info[MPMediaItemPropertyArtwork] = nowPlayingArtwork
         }
+        if #available(iOS 18.0, *), haptics.publishesISRC, let isrc = track.isrc {
+            info[MPNowPlayingInfoPropertyInternationalStandardRecordingCode] = isrc
+        }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
     func refreshLiveActivity() {
         lastActivityLyricsIndex = activeLyricsLineIndex
         LiveActivityController.shared.update(track: currentTrack, playing: isPlaying, time: currentTime, duration: duration, lyrics: lyrics)
+    }
+
+    func refreshHaptics() {
+        if haptics.enabled, !haptics.systemMode, let url = (player.currentItem?.asset as? AVURLAsset)?.url {
+            haptics.prepare(file: url)
+        } else { haptics.reset() }
+        updateNowPlayingInfo()
+    }
+
+    func clearHapticsCache() async throws {
+        haptics.reset()
+        try await MusicHapticAnalyzer.shared.clear()
+    }
+
+    func clearLyricsCache() async throws {
+        lyricsGeneration += 1
+        try await offlineStore.clearLyrics()
+        lyrics = nil
     }
 }
 

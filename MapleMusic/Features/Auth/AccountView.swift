@@ -70,6 +70,13 @@ struct AccountView: View {
                     }
 
                     NavigationLink {
+                        MusicHapticsSettingsView(controller: player.haptics)
+                    } label: {
+                        SettingsDestinationLabel(title: "Music Haptics", subtitle: "Музыка через прикосновения",
+                            systemImage: "waveform.path", color: .indigo)
+                    }
+
+                    NavigationLink {
                         StorageSettingsView()
                     } label: {
                         SettingsDestinationLabel(
@@ -172,7 +179,7 @@ private struct SettingsDestinationLabel: View {
             }
         } icon: {
             Image(systemName: systemImage)
-                .font(.body.weight(.semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
                 .background(color, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -513,6 +520,8 @@ private struct StorageSettingsView: View {
     @EnvironmentObject private var downloadPreferences: DownloadPreferences
     @EnvironmentObject private var player: PlayerStore
     @State private var showsClearDownloadsConfirmation = false
+    @State private var cacheToClear: String?
+    @State private var cacheError: String?
 
     var body: some View {
         List {
@@ -544,7 +553,15 @@ private struct StorageSettingsView: View {
                     showsClearDownloadsConfirmation = true
                 }
                 .tint(.red)
-                .disabled(downloads.entries.isEmpty)
+                .disabled(downloads.entries.isEmpty || !downloads.activeTrackIDs.isEmpty)
+            }
+
+            Section("Очистить отдельно") {
+                ForEach(["Обложки", "Тексты песен", "Хаптики"], id: \.self) { category in
+                    Button(category, role: .destructive) { cacheToClear = category }.tint(.red)
+                        .disabled(!downloads.activeTrackIDs.isEmpty)
+                }
+                if let cacheError { Text(cacheError).font(.footnote).foregroundStyle(.red) }
             }
 
             Section {
@@ -570,7 +587,26 @@ private struct StorageSettingsView: View {
             }
             Button("Отмена", role: .cancel) {}
         } message: {
-            Text("Треки и сохранённые тексты песен будут удалены с устройства.")
+            Text("Аудиофайлы будут удалены с устройства. Обложки, тексты и хаптики очищаются отдельно.")
+        }
+        .confirmationDialog("Очистить кэш: \(cacheToClear ?? "")?", isPresented: Binding(
+            get: { cacheToClear != nil }, set: { if !$0 { cacheToClear = nil } }
+        ), titleVisibility: .visible) {
+            let category = cacheToClear
+            Button("Очистить", role: .destructive) {
+                Task {
+                    do {
+                        switch category {
+                        case "Обложки": ArtworkImageCache.shared.clear()
+                        case "Тексты песен": try await player.clearLyricsCache()
+                        case "Хаптики": try await player.clearHapticsCache()
+                        default: break
+                        }
+                        cacheError = nil
+                    } catch { cacheError = error.localizedDescription }
+                }
+            }
+            Button("Отмена", role: .cancel) {}
         }
     }
 }

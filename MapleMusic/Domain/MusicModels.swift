@@ -125,6 +125,7 @@ struct Track: Codable, Hashable, Identifiable, Sendable {
     let isExplicit: Bool
     let downloadAllowed: Bool
     let availableQualities: Set<AudioQuality>
+    var isrc: String? = nil
 
     init(
         id: String,

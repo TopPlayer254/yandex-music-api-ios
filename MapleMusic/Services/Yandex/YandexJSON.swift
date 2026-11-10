@@ -41,7 +41,7 @@ enum YandexJSON: Decodable, Sendable {
             : parsedArtists.map(\.name).joined(separator: ", ")
         let albumID = album["id"].string
         let available = self["available"].bool ?? false
-        return Track(
+        var parsedTrack = Track(
             id: albumID.map { "\(id):\($0)" } ?? id,
             title: title,
             artist: Artist(
@@ -57,6 +57,8 @@ enum YandexJSON: Decodable, Sendable {
             downloadAllowed: available && (self["availableForPremiumUsers"].bool ?? available),
             availableQualities: [.automatic, .high, .lossless]
         )
+        parsedTrack.isrc = self["isrc"].string
+        return parsedTrack
     }
 
     func artist() -> Artist? {

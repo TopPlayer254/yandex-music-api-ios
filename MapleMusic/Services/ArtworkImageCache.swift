@@ -9,6 +9,15 @@ final class ArtworkImageCache {
     private let memory = NSCache<NSURL, UIImage>()
     private var inFlight: [URL: Task<UIImage?, Never>] = [:]
     private let session: URLSession
+    private var generation = 0
+
+    func clear() {
+        generation += 1
+        inFlight.values.forEach { $0.cancel() }
+        inFlight.removeAll()
+        memory.removeAllObjects()
+        session.configuration.urlCache?.removeAllCachedResponses()
+    }
 
     private init() {
         memory.countLimit = 160
@@ -29,6 +38,7 @@ final class ArtworkImageCache {
     }
 
     func image(for url: URL) async -> UIImage? {
+        let ticket = generation
         if let cached = cachedImage(for: url) { return cached }
         if let task = inFlight[url] { return await task.value }
 
@@ -54,6 +64,7 @@ final class ArtworkImageCache {
         }
         inFlight[url] = task
         let image = await task.value
+        guard ticket == generation, !Task.isCancelled else { return nil }
         inFlight[url] = nil
         if let image {
             let cost = max(Int(image.size.width * image.size.height * image.scale * image.scale * 4), 1)
