@@ -2,6 +2,44 @@ import XCTest
 @testable import MapleMusic
 
 final class MusicHapticsTests: XCTestCase {
+    func testPCMAnalysisSilenceAttacksAndContentCache() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("test.wav")
+        var wav = Data()
+        func text(_ value: String) { wav.append(Data(value.utf8)) }
+        func number<T: FixedWidthInteger>(_ value: T) {
+            var little = value.littleEndian
+            withUnsafeBytes(of: &little) { wav.append(contentsOf: $0) }
+        }
+        text("RIFF"); number(UInt32(36 + 22050 * 2)); text("WAVEfmt ")
+        number(UInt32(16)); number(UInt16(1)); number(UInt16(1)); number(UInt32(22050))
+        number(UInt32(44100)); number(UInt16(2)); number(UInt16(16)); text("data"); number(UInt32(44100))
+        for index in 0..<22050 {
+            let t = Double(index) / 22050
+            let amplitude = t >= 0.2 && t < 0.4 ? 0.6 * sin(2 * .pi * 70 * t) : 0
+            number(Int16(amplitude * 32767))
+        }
+        try wav.write(to: url)
+        let cache = root.appendingPathComponent("cache")
+        let analyzer = MusicHapticAnalyzer(root: cache)
+        let result = try await analyzer.analyze(url)
+        XCTAssertEqual(result.interval, 0.01)
+        XCTAssertGreaterThanOrEqual(result.frames.count, 99)
+        XCTAssertTrue(result.frames.prefix(10).allSatisfy { $0.intensity == 0 })
+        XCTAssertTrue(result.frames[20..<40].contains { $0.intensity > 0.2 })
+        XCTAssertTrue(result.frames.allSatisfy { $0.intensity.isFinite && (0...1).contains($0.intensity) && (0...1).contains($0.sharpness) })
+        let relocated = root.appendingPathComponent("same-content.wav")
+        try wav.write(to: relocated)
+        let reused = try await analyzer.analyze(relocated)
+        XCTAssertEqual(try JSONEncoder().encode(result), try JSONEncoder().encode(reused))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cache.path).count, 1)
+        try await analyzer.clear()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cache.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
     func testLyricsSurviveAudioClearAndCanBeClearedIndependently() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

@@ -16,9 +16,13 @@ struct MusicHapticAnalysis: Codable, Sendable {
 /// Full PCM analysis off the main actor, at 10 ms resolution. No synthetic beat clock.
 actor MusicHapticAnalyzer {
     static let shared = MusicHapticAnalyzer()
-    private let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("MusicHaptics-v1", isDirectory: true)
+    private let root: URL
     private var generation = 0
+
+    init(root: URL? = nil) {
+        self.root = root ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MusicHaptics-v1", isDirectory: true)
+    }
 
     func clear() throws {
         generation += 1
