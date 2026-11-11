@@ -17,15 +17,15 @@ enum AccentColorChoice: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .yandexYellow: "Классический жёлтый"
-        case .musicRed: "Музыка"
-        case .orange: "Оранжевый"
-        case .blue: "Синий"
-        case .violet: "Фиолетовый"
-        case .green: "Зелёный"
-        case .graphite: "Графитовый"
-        case .custom: "Свой цвет"
-        case .albumCover: "Цвет обложки"
+        case .yandexYellow: String(localized: "Классический жёлтый")
+        case .musicRed: String(localized: "Музыка")
+        case .orange: String(localized: "Оранжевый")
+        case .blue: String(localized: "Синий")
+        case .violet: String(localized: "Фиолетовый")
+        case .green: String(localized: "Зелёный")
+        case .graphite: String(localized: "Графитовый")
+        case .custom: String(localized: "Свой цвет")
+        case .albumCover: String(localized: "Цвет обложки")
         }
     }
 
@@ -53,9 +53,9 @@ enum InterfaceStyleChoice: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .automatic: "Авто"
-        case .light: "Светлая"
-        case .dark: "Тёмная"
+        case .automatic: String(localized: "Авто")
+        case .light: String(localized: "Светлая")
+        case .dark: String(localized: "Тёмная")
         }
     }
 
@@ -149,6 +149,15 @@ final class AppearanceSettings: ObservableObject {
     var accentText: Color {
         Color(uiColor: ContrastRGB(UIColor(buttonTint)).buttonLabel.uiColor)
     }
+
+    private var actionRGB: ContrastRGB {
+        let fill = ContrastRGB(UIColor(buttonTint))
+        // Moderate hues such as green keep a white label by darkening the fill slightly.
+        return fill.contrast(with: .white) >= 3.4 ? fill.readable(on: .white) : fill
+    }
+
+    var primaryActionFill: Color { Color(uiColor: actionRGB.uiColor) }
+    var primaryActionLabel: Color { actionRGB.contrast(with: .white) >= 4.5 ? .white : .black }
 }
 
 private extension ContrastRGB {
@@ -167,22 +176,14 @@ struct AccentActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(configuration.role == .destructive ? Color.white : appearance.accentText)
+            .foregroundStyle(configuration.role == .destructive ? Color.white : appearance.primaryActionLabel)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
             .frame(minHeight: 50)
-            .background(configuration.role == .destructive ? Color.red : appearance.buttonTint, in: Capsule())
+            .background(configuration.role == .destructive ? Color.red : appearance.primaryActionFill, in: Capsule())
             .opacity(!isEnabled ? 0.4 : (configuration.isPressed ? 0.75 : 1))
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
-    }
-}
-
-private struct MarqueeTextWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
     }
 }
 
@@ -194,10 +195,6 @@ struct MarqueeText: View {
     let height: CGFloat
     var alignment: Alignment = .leading
 
-    @State private var textWidth: CGFloat = 0
-    @State private var containerWidth: CGFloat = 0
-    @State private var offset: CGFloat = 0
-
     init(_ text: String, font: Font, color: Color, height: CGFloat, alignment: Alignment = .leading) {
         self.text = text
         self.font = font
@@ -207,42 +204,61 @@ struct MarqueeText: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            Text(text)
-                .font(font)
-                .foregroundStyle(color)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .background {
-                    GeometryReader { textProxy in
-                        Color.clear.preference(key: MarqueeTextWidthKey.self, value: textProxy.size.width)
-                    }
+        Group {
+            if reducesMotion {
+                label.frame(maxWidth: .infinity, alignment: alignment)
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    label.fixedSize(horizontal: true, vertical: false)
+                        .frame(maxWidth: .infinity, alignment: alignment)
+                    MarqueeLoop(label: label).id(text)
                 }
-                .offset(x: offset)
-                .frame(maxHeight: .infinity, alignment: .center)
-                .frame(width: proxy.size.width, alignment: textWidth > proxy.size.width ? .leading : alignment)
-                .onAppear { containerWidth = proxy.size.width }
-                .onChange(of: proxy.size.width) { _, width in containerWidth = width }
-        }
-        .frame(height: height)
-        .clipped()
-        .onPreferenceChange(MarqueeTextWidthKey.self) { textWidth = $0 }
-        .task(id: "\(text)|\(Int(textWidth))|\(Int(containerWidth))|\(reducesMotion)") {
-            offset = 0
-            let overflow = max(textWidth - containerWidth, 0)
-            guard overflow > 8, !reducesMotion else { return }
-            // Pause at both readable endpoints. No forever animation survives a
-            // track change or keeps offscreen labels animating.
-            let duration = max(2.5, Double(overflow / 28))
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(1.8)) } catch { return }
-                withAnimation(.linear(duration: duration)) { offset = -overflow }
-                do { try await Task.sleep(for: .seconds(duration + 1.8)) } catch { return }
-                withAnimation(.easeInOut(duration: 0.5)) { offset = 0 }
-                do { try await Task.sleep(for: .seconds(0.5)) } catch { return }
             }
         }
+        .frame(height: height)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(text)
+    }
+
+    private var label: some View { Text(text).font(font).foregroundStyle(color).lineLimit(1) }
+}
+
+private struct MarqueeLoop<Label: View>: View {
+    @Environment(\.scenePhase) private var scenePhase
+    let label: Label
+    @State private var measured: CGFloat = 0
+    @State private var started = Date()
+    private let gap: CGFloat = 34
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let fade = min(18 / max(width, 1), 0.22)
+            TimelineView(.animation(paused: measured <= width || scenePhase != .active)) { frame in
+                let travel = measured + gap
+                let elapsed = max(frame.date.timeIntervalSince(started) - 1.2, 0)
+                let offset = measured > width ? CGFloat(elapsed * 31).truncatingRemainder(dividingBy: travel) : 0
+                HStack(spacing: gap) {
+                    label.fixedSize(horizontal: true, vertical: false)
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { measured = $0 }
+                    if measured > width { label.fixedSize(horizontal: true, vertical: false) }
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                .offset(x: -offset)
+                .frame(width: width, height: geometry.size.height, alignment: .leading)
+                .mask {
+                    LinearGradient(stops: [
+                        .init(color: .black.opacity(offset > 0 ? 0 : 1), location: 0),
+                        .init(color: .black, location: fade),
+                        .init(color: .black, location: 1 - fade),
+                        .init(color: .clear, location: 1)
+                    ], startPoint: .leading, endPoint: .trailing)
+                }
+                .clipped()
+            }
+            .onChange(of: width) { _, _ in started = Date() }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -281,6 +297,9 @@ extension TimeInterval {
 
 extension Int {
     var russianTrackCount: String {
+        if Bundle.main.preferredLocalizations.first == "en" {
+            return self == 1 ? "1 song" : "\(self) songs"
+        }
         let mod100 = self % 100
         let mod10 = self % 10
         let noun: String
@@ -341,9 +360,9 @@ private struct PrimaryActionModifier: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
             content
-                .foregroundStyle(appearance.accentText)
+                .foregroundStyle(appearance.primaryActionLabel)
                 .buttonStyle(.glassProminent)
-                .tint(appearance.buttonTint)
+                .tint(appearance.primaryActionFill)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
         } else {
@@ -459,14 +478,6 @@ struct TrackRow: View {
                 .accessibilityLabel(isDownloaded ? "Удалить загрузку" : "Загрузить")
             }
 
-            Menu {
-                TrackActions(track: track)
-            } label: {
-                Image(systemName: "ellipsis")
-                    .frame(width: 34, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Действия с треком")
         }
         .contentShape(Rectangle())
         .contextMenu { TrackActions(track: track) }
@@ -485,14 +496,26 @@ struct TrackActions: View {
             } label: {
                 Label(catalog.isFavorite(track) ? "Убрать из любимого" : "Добавить в любимое", systemImage: "heart")
             }
+            Button { Task { await catalog.toggleRecommendation(track) } } label: {
+                Label {
+                    if catalog.recommendationExclusions.contains(track.id) { Text("Вернуть в рекомендации") }
+                    else { Text("Показывать меньше") }
+                } icon: { Image(systemName: "hand.thumbsdown") }
+            }
         }
-        Menu("Добавить в плейлист") {
+        Menu(track.isLocalImport && catalog.supportsCloudUploads
+             ? String(localized: "Загрузить в плейлист Яндекса") : String(localized: "Добавить в плейлист")) {
             let playlists = (catalog.library?.playlists ?? []).filter(\.isEditable)
             if playlists.isEmpty {
                 Text("Нет доступных плейлистов")
             } else {
                 ForEach(playlists) { playlist in
-                    Button(playlist.name) { Task { await catalog.add(track, to: playlist) } }
+                    Button(playlist.name) {
+                        Task {
+                            if track.isLocalImport && catalog.supportsCloudUploads { await catalog.uploadExisting(track, to: playlist) }
+                            else { _ = await catalog.add(track, to: playlist) }
+                        }
+                    }
                 }
             }
         }

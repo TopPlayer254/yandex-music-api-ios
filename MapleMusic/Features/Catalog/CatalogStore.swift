@@ -14,6 +14,7 @@ final class CatalogStore: ObservableObject {
     @Published private(set) var libraryErrorMessage: String?
     @Published private(set) var searchErrorMessage: String?
     @Published var errorMessage: String?
+    @Published private(set) var recommendationExclusions: Set<String> = []
 
     private let service: AnyMusicService
     private let offlineStore: OfflineStore
@@ -49,12 +50,29 @@ final class CatalogStore: ObservableObject {
 
     func refreshHome() async {
         do {
-            home = try await service.home()
+            recommendationExclusions = await offlineStore.recommendationExclusions()
+            home = filterRecommendations(try await service.home())
             homeErrorMessage = nil
         } catch {
             guard !Self.isCancellation(error) else { return }
             homeErrorMessage = error.localizedDescription
         }
+    }
+
+    func toggleRecommendation(_ track: Track) async {
+        do {
+            let excluded = !recommendationExclusions.contains(track.id)
+            recommendationExclusions = try await offlineStore.setRecommendationExcluded(track.id, excluded: excluded)
+            if excluded, let home { self.home = filterRecommendations(home) }
+            else { await refreshHome() }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func filterRecommendations(_ feed: HomeFeed) -> HomeFeed {
+        let allowed: (Track) -> Bool = { !self.recommendationExclusions.contains($0.id) }
+        return HomeFeed(greeting: feed.greeting, featured: feed.featured.filter(allowed), shelves: feed.shelves.map {
+            MusicShelf(id: $0.id, title: $0.title, subtitle: $0.subtitle, layout: $0.layout, tracks: $0.tracks.filter(allowed))
+        })
     }
 
     func applyWaveSettings(_ settings: WaveConfiguration) async -> Bool {
@@ -200,6 +218,25 @@ final class CatalogStore: ObservableObject {
         catch { errorMessage = error.localizedDescription }
     }
 
+    var supportsCloudUploads: Bool { service.supportsCloudUploads }
+
+    private func uploadTaggedMP3(_ url: URL, title: String, artist: String, album: String, playlist: Playlist) async throws -> Track {
+        let tagged = try await Task.detached(priority: .utility) {
+            try MP3MetadataWriter.taggedCopy(of: url, title: title, artist: artist, album: album)
+        }.value
+        defer { try? FileManager.default.removeItem(at: tagged) }
+        try Task.checkCancellation()
+        return try await service.uploadMP3(fileURL: tagged, fileName: title + ".mp3", toPlaylistID: playlist.id)
+    }
+
+    func uploadExisting(_ track: Track, to playlist: Playlist) async {
+        do {
+            guard let file = await offlineStore.localAsset(for: track) else { throw MusicServiceError.offlineUnavailable }
+            _ = try await uploadTaggedMP3(file.url, title: track.title, artist: track.artist.name, album: track.albumTitle, playlist: playlist)
+            _ = await loadPlaylist(playlist.id)
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     func importMP3(
         from fileURL: URL,
         title: String,
@@ -211,6 +248,11 @@ final class CatalogStore: ObservableObject {
             let asset = AVURLAsset(url: fileURL)
             guard try await asset.load(.isPlayable) else {
                 throw MusicServiceError.message("Этот MP3 не поддерживается проигрывателем.")
+            }
+            if supportsCloudUploads {
+                let track = try await uploadTaggedMP3(fileURL, title: title, artist: artist, album: album, playlist: playlist)
+                _ = await loadPlaylist(playlist.id)
+                return track
             }
             let loadedDuration = try await asset.load(.duration).seconds
             let duration = loadedDuration.isFinite ? max(loadedDuration, 0) : 0

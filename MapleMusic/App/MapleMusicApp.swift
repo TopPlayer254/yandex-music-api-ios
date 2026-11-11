@@ -18,6 +18,7 @@ struct MapleMusicApp: App {
 }
 
 private struct ProviderRoot: View {
+    @EnvironmentObject private var providerSettings: ProviderSettings
     @EnvironmentObject private var appearance: AppearanceSettings
     @StateObject private var container: AppContainer
     @State private var showsWelcome: Bool
@@ -50,6 +51,9 @@ private struct ProviderRoot: View {
         .environmentObject(container.waveSettings)
         .tint(appearance.tint)
         .preferredColorScheme(appearance.interfaceStyle.colorScheme)
+        .sheet(isPresented: $providerSettings.opensAccount) {
+            NavigationStack { AccountSettingsView() }
+        }
         .onDisappear { container.player.stop() }
     }
 }

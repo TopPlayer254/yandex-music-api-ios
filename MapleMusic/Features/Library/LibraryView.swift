@@ -132,9 +132,12 @@ struct TrackListView: View {
             if !tracks.isEmpty {
                 HStack(spacing: 10) {
                     Button { Task { await player.play(tracks[0], queue: tracks) } } label: {
-                        Label("Воспроизвести", systemImage: "play.fill")
+                        Label {
+                            if showsDownloadAll { Text("Играть") } else { Text("Воспроизвести") }
+                        } icon: { Image(systemName: "play.fill") }
+                            .lineLimit(1).minimumScaleFactor(0.75)
                             .frame(maxWidth: .infinity)
-                            .font(.headline)
+                            .font(.subheadline.weight(.semibold))
                     }
                     .adaptiveProminentButtonStyle()
 
@@ -142,6 +145,7 @@ struct TrackListView: View {
                         DownloadAllButton(tracks: tracks)
                     }
                 }
+                .listRowSeparator(.hidden)
             }
             ForEach(tracks) { track in
                 TrackRow(
@@ -162,8 +166,8 @@ struct TrackListView: View {
             }
         }
         .listStyle(.plain)
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationTitle(Text(LocalizedStringKey(title)))
+        .navigationBarTitleDisplayMode(.inline)
         .overlay {
             if tracks.isEmpty {
                 ContentUnavailableView("Нет треков", systemImage: "music.note")
@@ -203,9 +207,10 @@ struct PlaylistView: View {
                         ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
                     actionLayout {
                         Button { if let first = playlist.tracks.first { Task { await player.play(first, queue: playlist.tracks) } } } label: {
-                            Label("Воспроизвести", systemImage: "play.fill")
+                            Label("Играть", systemImage: "play.fill")
                                 .lineLimit(1).minimumScaleFactor(0.8)
                                 .frame(maxWidth: .infinity)
+                                .font(.subheadline.weight(.semibold))
                         }
                         .adaptiveProminentButtonStyle()
 
@@ -225,6 +230,7 @@ struct PlaylistView: View {
                     .accessibilityLabel("Перемешать")
                 }
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
                 .padding(.vertical)
             }
 
@@ -415,9 +421,10 @@ private struct ImportedMP3MetadataView: View {
     let playlist: Playlist
     let onImported: (Track) -> Void
     @State private var title: String
-    @State private var artist = "Неизвестный исполнитель"
-    @State private var album = "Без альбома"
+    @State private var artist = String(localized: "Неизвестный исполнитель")
+    @State private var album = ""
     @State private var isImporting = false
+    @State private var importError: String?
 
     init(fileURL: URL, playlist: Playlist, onImported: @escaping (Track) -> Void) {
         self.fileURL = fileURL
@@ -437,7 +444,11 @@ private struct ImportedMP3MetadataView: View {
                 Section {
                     LabeledContent("Файл", value: fileURL.lastPathComponent)
                 } footer: {
-                    Text("Файл копируется в локальное хранилище Maple Music и добавляется только в этот плейлист. На сервер Яндекса он не загружается.")
+                    if catalog.supportsCloudUploads {
+                        Text("MP3 будет загружен в ваш плейлист Яндекс Музыки и появится на других устройствах после обработки.")
+                    } else {
+                        Text("MP3 сохранится на этом устройстве и будет добавлен в выбранный плейлист.")
+                    }
                 }
             }
             .navigationTitle("Импорт MP3")
@@ -447,7 +458,7 @@ private struct ImportedMP3MetadataView: View {
                     Button("Отмена") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Импортировать") { importFile() }
+                    Button(catalog.supportsCloudUploads ? String(localized: "Загрузить MP3") : String(localized: "Импортировать")) { importFile() }
                         .disabled(
                             isImporting
                                 || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -458,6 +469,12 @@ private struct ImportedMP3MetadataView: View {
             .overlay {
                 if isImporting { ProgressView().controlSize(.large) }
             }
+            .interactiveDismissDisabled(isImporting)
+            .alert("Не удалось загрузить трек", isPresented: Binding(
+                get: { importError != nil }, set: { if !$0 { importError = nil } }
+            )) {
+                Button("ОК", role: .cancel) {}
+            } message: { Text(importError ?? "") }
         }
     }
 
@@ -479,6 +496,9 @@ private struct ImportedMP3MetadataView: View {
                 await downloads.refresh()
                 onImported(track)
                 dismiss()
+            } else {
+                importError = catalog.errorMessage
+                catalog.errorMessage = nil
             }
         }
     }
@@ -502,6 +522,7 @@ private struct DownloadAllButton: View {
                     .frame(maxWidth: .infinity)
             }
         }
+        .font(.subheadline.weight(.semibold))
         .adaptiveSecondaryButtonStyle()
         .buttonBorderShape(.capsule)
         .controlSize(.large)

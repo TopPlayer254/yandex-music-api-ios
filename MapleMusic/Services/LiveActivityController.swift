@@ -8,12 +8,16 @@ final class LiveActivityController: ObservableObject {
     @Published private(set) var status = "Выключено"
     private var activity: Activity<MaplePlaybackActivity>?
     private var pending: Task<Void, Never>?
+    private var revision = 0
 
     func update(track: Track?, playing: Bool, time: Double, duration: Double, lyrics: Lyrics?) {
         let enabled = UserDefaults.standard.bool(forKey: "developer-live-activity")
         let previous = pending
+        revision += 1
+        let updateRevision = revision
         pending = Task {
             await previous?.value
+            guard revision == updateRevision else { return }
             guard enabled, let track else {
                 for item in Activity<MaplePlaybackActivity>.activities {
                     await item.end(nil, dismissalPolicy: .immediate)

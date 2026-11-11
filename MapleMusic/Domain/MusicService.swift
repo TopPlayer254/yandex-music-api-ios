@@ -12,6 +12,8 @@ protocol MusicService: Sendable {
     func createPlaylist(name: String) async throws -> Playlist
     func add(trackID: String, toPlaylistID playlistID: String) async throws
     func remove(trackID: String, fromPlaylistID playlistID: String) async throws
+    var supportsCloudUploads: Bool { get }
+    func uploadMP3(fileURL: URL, fileName: String, toPlaylistID playlistID: String) async throws -> Track
     func setFavorite(trackID: String, isFavorite: Bool) async throws
     func playbackAsset(for track: Track, quality: AudioQuality) async throws -> PlaybackAsset
     func lyrics(for track: Track) async throws -> Lyrics?
@@ -29,6 +31,8 @@ struct AnyMusicService: MusicService {
     private let _createPlaylist: @Sendable (String) async throws -> Playlist
     private let _add: @Sendable (String, String) async throws -> Void
     private let _remove: @Sendable (String, String) async throws -> Void
+    let supportsCloudUploads: Bool
+    private let _uploadMP3: @Sendable (URL, String, String) async throws -> Track
     private let _setFavorite: @Sendable (String, Bool) async throws -> Void
     private let _playback: @Sendable (Track, AudioQuality) async throws -> PlaybackAsset
     private let _lyrics: @Sendable (Track) async throws -> Lyrics?
@@ -45,6 +49,8 @@ struct AnyMusicService: MusicService {
         _createPlaylist = service.createPlaylist
         _add = service.add
         _remove = service.remove
+        supportsCloudUploads = service.supportsCloudUploads
+        _uploadMP3 = service.uploadMP3
         _setFavorite = service.setFavorite
         _playback = service.playbackAsset
         _lyrics = service.lyrics
@@ -61,6 +67,9 @@ struct AnyMusicService: MusicService {
     func createPlaylist(name: String) async throws -> Playlist { try await _createPlaylist(name) }
     func add(trackID: String, toPlaylistID playlistID: String) async throws { try await _add(trackID, playlistID) }
     func remove(trackID: String, fromPlaylistID playlistID: String) async throws { try await _remove(trackID, playlistID) }
+    func uploadMP3(fileURL: URL, fileName: String, toPlaylistID playlistID: String) async throws -> Track {
+        try await _uploadMP3(fileURL, fileName, playlistID)
+    }
     func setFavorite(trackID: String, isFavorite: Bool) async throws { try await _setFavorite(trackID, isFavorite) }
     func playbackAsset(for track: Track, quality: AudioQuality) async throws -> PlaybackAsset { try await _playback(track, quality) }
     func lyrics(for track: Track) async throws -> Lyrics? { try await _lyrics(track) }
@@ -68,4 +77,8 @@ struct AnyMusicService: MusicService {
 
 extension MusicService {
     func nextWaveTracks(after trackID: String) async throws -> [Track] { [] }
+    var supportsCloudUploads: Bool { false }
+    func uploadMP3(fileURL: URL, fileName: String, toPlaylistID playlistID: String) async throws -> Track {
+        throw MusicServiceError.unsupportedFeature("Облачная загрузка MP3 недоступна для этого источника.")
+    }
 }

@@ -73,7 +73,7 @@ final class AppContainer: ObservableObject {
         let account: String
         if case let .signedIn(profile) = auth.state { account = profile.id }
         else { account = configuration.kind == .demo ? "demo" : "signed-out" }
-        let scope = configuration.credentialID + ":" + account
+        let scope = configuration.credentialNamespace + ":" + account
         await offlineStore.setScope(scope)
         await downloads.refresh()
         if configuration.kind == .demo || account != "signed-out" { await catalog.bootstrap() }

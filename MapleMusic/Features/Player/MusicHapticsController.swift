@@ -17,6 +17,7 @@ final class MusicHapticsController: ObservableObject {
     @Published private(set) var status = "Выключено"
     let supported = CHHapticEngine.capabilitiesForHardware().supportsHaptics
     var changed: (() -> Void)?
+    var isInBackground = false
     private var engine: CHHapticEngine?
     private var patternPlayer: CHHapticAdvancedPatternPlayer?
     private var analysis: MusicHapticAnalysis?
@@ -39,7 +40,12 @@ final class MusicHapticsController: ObservableObject {
 
     deinit { task?.cancel(); if let observer { NotificationCenter.default.removeObserver(observer) } }
 
-    var publishesISRC: Bool { enabled && systemMode }
+    var publishesISRC: Bool {
+        guard enabled else { return false }
+        if systemMode { return true }
+        if #available(iOS 18.0, *) { return isInBackground && MAMusicHapticsManager.shared.isActive }
+        return false
+    }
 
     func prepare(file url: URL) {
         guard enabled, !systemMode, supported else { return }
@@ -73,7 +79,7 @@ final class MusicHapticsController: ObservableObject {
 
     func tick(time: Double, playing: Bool, isrc: String?) {
         guard enabled else { stopPattern(); status = "Выключено"; return }
-        if systemMode {
+        if publishesISRC {
             stopPattern()
             if #available(iOS 18.0, *) {
                 status = !MAMusicHapticsManager.shared.isActive ? "Включите Music Haptics в универсальном доступе iOS"
@@ -81,6 +87,7 @@ final class MusicHapticsController: ObservableObject {
             } else { status = "Для системного режима нужна iOS 18" }
             return
         }
+        if isInBackground { stopPattern(); return }
         guard supported else { status = "Устройство не поддерживает Core Haptics"; return }
         guard playing, time.isFinite, let analysis, !analysis.frames.isEmpty else { stopPattern(); return }
         if let start = segmentStart, time >= start, time < segmentEnd - 0.12,

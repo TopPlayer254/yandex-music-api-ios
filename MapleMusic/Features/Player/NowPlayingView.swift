@@ -2,19 +2,10 @@ import AVKit
 import SwiftUI
 
 struct NowPlayingView: View {
-    private enum Page: String, CaseIterable, Identifiable {
+    private enum Page {
         case player
         case lyrics
         case queue
-
-        var id: Self { self }
-        var title: String {
-            switch self {
-            case .player: "Исполняется"
-            case .lyrics: "Текст песни"
-            case .queue: "Далее"
-            }
-        }
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -24,6 +15,8 @@ struct NowPlayingView: View {
     @EnvironmentObject private var downloads: DownloadsStore
     @State private var page: Page = .player
     @State private var backgroundVisible = false
+    @GestureState private var pull: CGFloat = 0
+    @Namespace private var coverTransition
     @Environment(\.accessibilityReduceMotion) private var reducesMotion
 
     var body: some View {
@@ -31,29 +24,46 @@ struct NowPlayingView: View {
             ArtworkBackdrop(artwork: player.currentTrack?.artwork)
                 .opacity(backgroundVisible ? 1 : 0)
 
-            VStack(spacing: 0) {
-                header
-                    .padding(.horizontal, 14)
-                    .padding(.top, 8)
-
-                Group {
-                    switch page {
-                    case .player:
-                        playerPage
-                    case .lyrics:
-                        LyricsView()
-                    case .queue:
-                        QueueView()
+            GeometryReader { size in
+                let compact = size.size.height < 680
+                VStack(spacing: 0) {
+                    grabber
+                    Group {
+                        if page == .player {
+                            expandedArtwork
+                        } else {
+                            VStack(spacing: 0) {
+                                HStack(spacing: 10) {
+                                    if let track = player.currentTrack {
+                                        ArtworkView(artwork: track.artwork, cornerRadius: 8)
+                                            .frame(width: 48, height: 48)
+                                            .matchedGeometryEffect(id: "playing-cover", in: coverTransition)
+                                    }
+                                    metadata(compact: true)
+                                }
+                                .padding(.horizontal, 24)
+                                .padding(.bottom, 12)
+                                if page == .lyrics { LyricsView().transition(.opacity) }
+                                else { QueueView().transition(.opacity) }
+                            }
+                        }
                     }
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.985)))
+                    .frame(maxHeight: .infinity)
 
-                pageControls
-                    .padding(.horizontal, 42)
-                    .padding(.bottom, 14)
+                    VStack(spacing: compact ? 3 : 10) {
+                        PlaybackScrubber(player: player, clock: player.clock)
+                        transportControls(compact: compact)
+                        volumeControl
+                        pageControls.padding(.horizontal, 14)
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.top, 12)
+                    .padding(.bottom, 10)
+                }
             }
         }
-        .animation(.easeInOut(duration: 0.24), value: page)
+        .offset(y: pull)
+        .animation(reducesMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88), value: page)
         .preferredColorScheme(.dark)
         .background(Color.black.ignoresSafeArea())
         .onAppear {
@@ -70,33 +80,18 @@ struct NowPlayingView: View {
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 12) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.down")
-                    .font(.headline)
-                    .frame(width: 42, height: 42)
-            }
-            .buttonStyle(.plain)
-
-            VStack(spacing: 2) {
-                Text(page.title.uppercased())
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.65))
-                MarqueeText(
-                    player.currentTrack?.albumTitle ?? "Maple Music",
-                    font: .caption,
-                    color: .white,
-                    height: 16,
-                    alignment: .center
-                )
-            }
-            .frame(maxWidth: .infinity)
-
-            moreMenu
+    private var grabber: some View {
+        Button { dismiss() } label: {
+            Capsule().fill(.white.opacity(0.45))
+                .frame(width: 38, height: 5)
+                .frame(width: 104, height: 34)
+                .contentShape(Rectangle())
         }
-        .foregroundStyle(.white)
-        .frame(height: 46)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Свернуть плеер")
+        .simultaneousGesture(DragGesture(minimumDistance: 8)
+            .updating($pull) { value, offset, _ in offset = max(value.translation.height, 0) * 0.75 }
+            .onEnded { if $0.translation.height > 58 || $0.predictedEndTranslation.height > 120 { dismiss() } })
     }
 
     private var moreMenu: some View {
@@ -115,66 +110,59 @@ struct NowPlayingView: View {
         .equatable()
     }
 
-    private var playerPage: some View {
+    private var expandedArtwork: some View {
         GeometryReader { proxy in
-            let compact = proxy.size.height < 620
-            let artworkSide = min(proxy.size.width - 56, proxy.size.height * (compact ? 0.36 : 0.44))
+            let artworkSide = max(1, min(proxy.size.width - 56, proxy.size.height - 80))
 
-            VStack(spacing: compact ? 10 : 18) {
-                Spacer(minLength: compact ? 8 : 18)
-
+            VStack(spacing: 12) {
+                Spacer(minLength: 4)
                 if let track = player.currentTrack {
-                    ArtworkView(artwork: track.artwork, cornerRadius: compact ? 12 : 16)
+                    ArtworkView(artwork: track.artwork, cornerRadius: 16)
                         .frame(width: artworkSide, height: artworkSide)
-                        .shadow(color: .black.opacity(0.14), radius: 12, y: 6)
-                        .scaleEffect(player.isPlaying ? 1 : 0.94)
+                        .matchedGeometryEffect(id: "playing-cover", in: coverTransition)
+                        .scaleEffect(player.isPlaying || reducesMotion ? 1 : 0.91)
                         .animation(.spring(response: 0.5, dampingFraction: 0.82), value: player.isPlaying)
                 }
-
-                Spacer(minLength: compact ? 6 : 12)
-                metadata
-                PlaybackScrubber(player: player, clock: player.clock)
-                transportControls(compact: compact)
-                volumeControl
-                Spacer(minLength: 2)
+                Spacer(minLength: 6)
+                metadata(compact: false)
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 28)
         }
     }
 
-    private var metadata: some View {
-        HStack(spacing: 14) {
+    private func metadata(compact: Bool) -> some View {
+        HStack(spacing: compact ? 5 : 10) {
             VStack(alignment: .leading, spacing: 2) {
                 MarqueeText(
                     player.currentTrack?.title ?? "Ничего не играет",
-                    font: .title3.bold(),
+                    font: compact ? .subheadline.bold() : .title3.bold(),
                     color: .white,
-                    height: 25
+                    height: compact ? 20 : 25
                 )
                 MarqueeText(
                     player.currentTrack?.artist.name ?? "",
-                    font: .title3,
+                    font: compact ? .caption : .title3,
                     color: .white.opacity(0.68),
-                    height: 25
+                    height: compact ? 16 : 25
                 )
             }
 
-            Spacer(minLength: 8)
             if player.isBuffering {
                 ProgressView().tint(.white)
             }
             if let track = player.currentTrack {
                 Button { Task { await catalog.toggleFavorite(track) } } label: {
                     Image(systemName: catalog.isFavorite(track) ? "heart.fill" : "heart")
-                        .font(.title3)
+                        .font(compact ? .subheadline : .title3)
                         .foregroundStyle(catalog.isFavorite(track) ? appearance.accentText : .white)
-                        .frame(width: 40, height: 40)
+                        .frame(width: compact ? 34 : 40, height: compact ? 34 : 40)
                         .background(catalog.isFavorite(track) ? appearance.buttonTint : .clear, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(catalog.isFavorite(track) ? "Убрать из любимого" : "Добавить в любимое")
             }
+            moreMenu
         }
         .foregroundStyle(.white)
     }
@@ -285,8 +273,8 @@ private struct StableNowPlayingMenu: View, Equatable {
             if let track {
                 TrackActions(track: track)
                 if isDownloaded {
-                    Button("Удалить загрузку", systemImage: "trash", role: .destructive) {
-                        removeDownload(track)
+                    Button(role: .destructive) { removeDownload(track) } label: {
+                        Label("Удалить загрузку", systemImage: "trash").tint(.red)
                     }
                 } else if track.downloadAllowed {
                     Button("Загрузить", systemImage: "arrow.down.circle") { download(track) }
@@ -308,9 +296,9 @@ private struct StableNowPlayingMenu: View, Equatable {
 
     private var repeatTitle: String {
         switch repeatMode {
-        case .off: "Повтор: выключен"
-        case .all: "Повторять очередь"
-        case .one: "Повторять трек"
+        case .off: String(localized: "Повтор: выключен")
+        case .all: String(localized: "Повторять очередь")
+        case .one: String(localized: "Повторять трек")
         }
     }
 }
@@ -360,54 +348,29 @@ struct MinimalTrackSlider: View {
 struct ArtworkBackdrop: View {
     @Environment(\.accessibilityReduceMotion) private var reducesMotion
     let artwork: Artwork?
-    @State private var drifts = false
-    @State private var image: UIImage?
+    @State private var color = Color(red: 0.11, green: 0.12, blue: 0.15)
 
     var body: some View {
-        let displayedImage = image ?? artwork?.url.flatMap { ArtworkImageCache.shared.cachedImage(for: $0) }
-        GeometryReader { proxy in
-            ZStack {
-                Color.black
-                if let displayedImage {
-                    Image(uiImage: displayedImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        .clipped()
-                        .scaleEffect(drifts ? 1.22 : 1.08)
-                        .offset(x: drifts ? 22 : -18, y: drifts ? -16 : 18)
-                        .saturation(1.12)
-                        .blur(radius: 62, opaque: true)
-                } else {
-                    Color(uiColor: .systemGray5)
-                }
-                Color.black.opacity(0.32)
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .clipped()
-        }
+        color
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .onAppear {
-            guard !reducesMotion else { return }
-            withAnimation(.easeInOut(duration: 14).repeatForever(autoreverses: true)) {
-                drifts = true
-            }
-        }
         .task(id: artwork?.url) {
-            guard let url = artwork?.url else {
-                image = nil
-                return
+            var next = Color(red: 0.11, green: 0.12, blue: 0.15)
+            if let url = artwork?.url, let image = await ArtworkImageCache.shared.image(for: url)?.cgImage,
+               let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8,
+                                       bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                context.interpolationQuality = .high
+                context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+                if let data = context.data?.assumingMemoryBound(to: UInt8.self) {
+                    next = Color(red: 0.06 + Double(data[0]) / 650,
+                                 green: 0.06 + Double(data[1]) / 650,
+                                 blue: 0.07 + Double(data[2]) / 650)
+                }
             }
-            if let cached = ArtworkImageCache.shared.cachedImage(for: url) {
-                image = cached
-                return
-            }
-            image = nil
-            let loadedImage = await ArtworkImageCache.shared.image(for: url)
-            guard !Task.isCancelled, artwork?.url == url else { return }
-            image = loadedImage
+            guard !Task.isCancelled else { return }
+            withAnimation(reducesMotion ? nil : .easeInOut(duration: 0.45)) { color = next }
         }
     }
 }
@@ -422,26 +385,39 @@ private struct TimedLyricsView: View {
     @Environment(\.accessibilityReduceMotion) private var reducesMotion
     @ObservedObject var player: PlayerStore
     @ObservedObject var clock: LyricsClock
+    @GestureState private var browsing = false
+    @State private var followAt = Date.distantPast
 
     var body: some View {
         Group {
             if let lyrics = player.lyrics, !lyrics.lines.isEmpty {
+                GeometryReader { viewport in
+                let height = viewport.size.height
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 20) {
+                        LazyVStack(alignment: .leading, spacing: 24) {
                             ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
                                 if lyrics.isSynchronized {
-                                    Button { player.seek(to: line.time) } label: {
+                                    Button {
+                                        followAt = .distantPast
+                                        player.seek(to: line.time)
+                                    } label: {
                                         LyricLineView(line: line, active: index == clock.index,
                                                       playing: player.isPlaying && !player.isBuffering,
                                                       clock: player.clock)
-                                            .font(.title2.bold())
+                                            .font(.title.bold())
                                             .multilineTextAlignment(.leading)
                                             .scaleEffect(reducesMotion || index == clock.index ? 1 : 0.96, anchor: .leading)
-                                            .blur(radius: reducesMotion || index == clock.index ? 0 : 0.7)
+                                            .blur(radius: reducesMotion || browsing || index == clock.index ? 0 : 1.5)
                                             .animation(reducesMotion ? nil : .spring(response: 0.55, dampingFraction: 0.88), value: clock.index)
                                     }
                                     .buttonStyle(.plain)
+                                    .modifier(LyricFlowMotion(line: index, active: browsing ? nil : clock.index, enabled: !reducesMotion))
+                                    .visualEffect { effect, bounds in
+                                        let y = bounds.frame(in: .named("lyricsViewport")).midY
+                                        let edge = max(height - 82, 1)
+                                        return effect.blur(radius: 5 * min(max((y - edge) / 82, 0), 1))
+                                    }
                                     .id(index)
                                 } else {
                                     Text(line.text)
@@ -464,15 +440,28 @@ private struct TimedLyricsView: View {
                                     .padding(.top, 8)
                             }
                         }
-                        .padding(24)
+                        .padding(.horizontal, 26)
+                        .padding(.top, lyrics.isSynchronized ? height * 0.24 : 18)
+                        .padding(.bottom, lyrics.isSynchronized ? height * 0.64 : 30)
                     }
+                    .scrollIndicators(.hidden)
+                    .coordinateSpace(name: "lyricsViewport")
+                    .mask { LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.09),
+                        .init(color: .black, location: 0.82), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom) }
+                    .simultaneousGesture(DragGesture(minimumDistance: 8)
+                        .updating($browsing) { _, state, _ in state = true }
+                        .onEnded { _ in followAt = Date().addingTimeInterval(4) })
                     .onChange(of: clock.index, initial: true) { _, index in
-                        guard lyrics.isSynchronized else { return }
-                        guard let index else { return }
-                        withAnimation(reducesMotion ? nil : .spring(response: 0.65, dampingFraction: 0.9)) {
-                            proxy.scrollTo(index, anchor: .center)
-                        }
+                        guard lyrics.isSynchronized, !browsing, Date() >= followAt, let index else { return }
+                        scroll(to: index, proxy: proxy)
                     }
+                    .task(id: followAt) {
+                        guard lyrics.isSynchronized, followAt > Date() else { return }
+                        do { try await Task.sleep(for: .seconds(max(followAt.timeIntervalSinceNow, 0))) }
+                        catch { return }
+                        if !browsing, let index = clock.index { scroll(to: index, proxy: proxy) }
+                    }
+                }
                 }
             } else {
                 ContentUnavailableView {
@@ -486,6 +475,37 @@ private struct TimedLyricsView: View {
                 .foregroundStyle(.white)
             }
         }
+    }
+
+    private func scroll(to index: Int, proxy: ScrollViewProxy) {
+        withAnimation(reducesMotion ? nil : .spring(response: 0.55, dampingFraction: 0.83)) {
+            proxy.scrollTo(index, anchor: UnitPoint(x: 0.5, y: 0.31))
+        }
+    }
+}
+
+private struct LyricFlowMotion: ViewModifier {
+    let line: Int
+    let active: Int?
+    let enabled: Bool
+    @State private var lift: CGFloat = 0
+    @State private var lastActive: Int?
+
+    func body(content: Content) -> some View {
+        content.offset(y: lift)
+            .onChange(of: active, initial: true) { _, next in
+                let previous = lastActive
+                lastActive = next
+                guard enabled, let next, let previous, abs(next - previous) == 1,
+                      (-1...5).contains(line - next) else { return }
+                let distance = max(line - next, 0)
+                let direction: CGFloat = next > previous ? 1 : -1
+                withTransaction(Transaction(animation: nil)) {
+                    lift = direction * CGFloat(10 + min(distance, 4) * 3)
+                }
+                withAnimation(.spring(response: 0.47, dampingFraction: 0.64)
+                    .delay(Double(min(distance, 4)) * 0.037)) { lift = 0 }
+            }
     }
 }
 
@@ -505,7 +525,7 @@ private struct QueueView: View {
                     }
                     Spacer()
                     if player.currentTrack?.id == track.id {
-                        PlayingEqualizer(isPlaying: player.isPlaying, color: appearance.tint)
+                        PlayingEqualizer(motion: player.waveMotion, isPlaying: player.isPlaying, color: .white)
                     }
                 }
             }
@@ -542,23 +562,19 @@ private struct QueueView: View {
 
 private struct PlayingEqualizer: View {
     @Environment(\.accessibilityReduceMotion) private var reducesMotion
+    @ObservedObject var motion: WaveMotionStore
     let isPlaying: Bool
     let color: Color
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: !isPlaying || reducesMotion)) { timeline in
-            let time = timeline.date.timeIntervalSinceReferenceDate
-            HStack(alignment: .center, spacing: 2) {
-                ForEach(0..<4, id: \.self) { index in
-                    Capsule()
-                        .fill(color)
-                        .frame(width: 3, height: isPlaying && !reducesMotion
-                            ? 5 + 12 * abs(sin(time * (5.2 + Double(index) * 1.3) + Double(index)))
-                            : 6)
-                }
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(1...4, id: \.self) { index in
+                Capsule().fill(color)
+                    .frame(width: 3, height: isPlaying && !reducesMotion ? 4 + 14 * CGFloat(motion.levels[index]) : 4)
             }
-            .frame(width: 20, height: 19)
         }
+        .frame(width: 20, height: 19)
+        .animation(reducesMotion ? nil : .linear(duration: 0.05), value: motion.levels)
         .accessibilityLabel(isPlaying ? "Сейчас играет" : "Выбранный трек")
     }
 }

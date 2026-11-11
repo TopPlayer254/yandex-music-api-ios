@@ -3,6 +3,7 @@ import Foundation
 import MediaPlayer
 import Combine
 import Network
+import UIKit
 
 @MainActor
 final class PlayerStore: ObservableObject {
@@ -59,6 +60,8 @@ final class PlayerStore: ObservableObject {
     private var audioEnvelope: AudioEnvelope?
     private var endObserver: NSObjectProtocol?
     private var itemStatus: NSKeyValueObservation?
+    private var transportStatus: NSKeyValueObservation?
+    private var lifecycleObservers: [NSObjectProtocol] = []
     private var requestID = UUID()
     private var lastAttemptedTrack: Track?
     private var seekID: UUID?
@@ -110,6 +113,8 @@ final class PlayerStore: ObservableObject {
     }
 
     deinit {
+        for observer in lifecycleObservers { NotificationCenter.default.removeObserver(observer) }
+        for (command, target) in remoteTargets { command.removeTarget(target) }
         if let timeObserver {
             player.removeTimeObserver(timeObserver)
         }
@@ -374,6 +379,7 @@ final class PlayerStore: ObservableObject {
 
     func pause() {
         player.pause()
+        waveMotion.reset()
         synchronizePlaybackClock()
         isPlaying = false
         updateNowPlayingInfo()
@@ -467,11 +473,13 @@ final class PlayerStore: ObservableObject {
                 var fresh: [Track] = []
                 var cursor = anchor
                 for attempt in 0..<3 {
-                    let fetched = try await self.service.nextWaveTracks(after: cursor)
+                    let batch = try await self.service.nextWaveTracks(after: cursor)
+                    let excluded = await self.offlineStore.recommendationExclusions()
+                    let fetched = batch.filter { !excluded.contains($0.id) }
                     guard !Task.isCancelled, self.isWaveQueue else { return }
                     fresh = fetched.filter { existing.insert($0.id).inserted }
                     if !fresh.isEmpty { break }
-                    if let last = fetched.last { cursor = last.id }
+                    if let last = batch.last { cursor = last.id }
                     if attempt < 2 { try await Task.sleep(for: .milliseconds(500)) }
                 }
                 self.queue.append(contentsOf: fresh)
@@ -727,18 +735,36 @@ final class PlayerStore: ObservableObject {
     }
 
     private func configureObservers() {
+        transportStatus = player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.synchronizePlaybackClock()
+                self.updateNowPlayingInfo()
+            }
+        }
+        for name in [UIApplication.didEnterBackgroundNotification, UIApplication.willEnterForegroundNotification] {
+            lifecycleObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] event in
+                let background = event.name == UIApplication.didEnterBackgroundNotification
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.haptics.isInBackground = background
+                    self.synchronizePlaybackClock()
+                    self.updateNowPlayingInfo()
+                }
+            })
+        }
         waveObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.05, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
             Task { @MainActor in
                 guard let self else { return }
-                let fallback = 0.25 + 0.28 * abs(sin(time.seconds * 6.7))
-                    + 0.16 * abs(sin(time.seconds * 10.9))
-                let level = self.isPlaying && time.seconds.isFinite
-                    ? (self.audioEnvelope?.level(at: time.seconds) ?? Float(fallback))
-                    : 0
-                self.waveMotion.update(level)
+                guard self.isPlaying, self.player.timeControlStatus == .playing,
+                      self.seekID == nil, time.seconds.isFinite, let envelope = self.audioEnvelope else {
+                    self.waveMotion.reset()
+                    return
+                }
+                self.waveMotion.update(envelope.level(at: time.seconds), bands: envelope.bands(at: time.seconds))
             }
         }
         timeObserver = player.addPeriodicTimeObserver(
@@ -752,7 +778,7 @@ final class PlayerStore: ObservableObject {
                 guard self.seekID == nil, let item = self.player.currentItem, item.status == .readyToPlay else { return }
                 let seconds = item.currentTime().seconds
                 self.currentTime = seconds.isFinite ? max(seconds, 0) : 0
-                self.haptics.tick(time: self.currentTime, playing: self.isPlaying && !self.isBuffering, isrc: self.currentTrack?.isrc)
+                self.haptics.tick(time: self.currentTime, playing: self.systemPlaybackRate > 0, isrc: self.currentTrack?.isrc)
                 if let seconds = self.player.currentItem?.duration.seconds, seconds.isFinite, seconds > 0 {
                     if abs(self.duration - seconds) > 0.1 { self.duration = seconds }
                 }
@@ -809,8 +835,13 @@ final class PlayerStore: ObservableObject {
         }))
     }
 
+    private var systemPlaybackRate: Double {
+        guard isPlaying, player.timeControlStatus == .playing else { return 0 }
+        return max(Double(player.rate), 0)
+    }
+
     private func updateNowPlayingInfo() {
-        haptics.tick(time: currentTime, playing: isPlaying && !isBuffering, isrc: currentTrack?.isrc)
+        haptics.tick(time: currentTime, playing: systemPlaybackRate > 0, isrc: currentTrack?.isrc)
         refreshLiveActivity()
         guard let track = currentTrack else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
@@ -822,7 +853,8 @@ final class PlayerStore: ObservableObject {
             MPMediaItemPropertyAlbumTitle: track.albumTitle,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyPlaybackRate: systemPlaybackRate,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
             MPNowPlayingInfoPropertyExternalContentIdentifier: track.id,
         ]
@@ -837,7 +869,7 @@ final class PlayerStore: ObservableObject {
 
     func refreshLiveActivity() {
         lastActivityLyricsIndex = activeLyricsLineIndex
-        LiveActivityController.shared.update(track: currentTrack, playing: isPlaying, time: currentTime, duration: duration, lyrics: lyrics)
+        LiveActivityController.shared.update(track: currentTrack, playing: systemPlaybackRate > 0, time: currentTime, duration: duration, lyrics: lyrics)
     }
 
     func refreshHaptics() {

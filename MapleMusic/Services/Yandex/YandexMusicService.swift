@@ -7,8 +7,8 @@ actor YandexMusicService: MusicService {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .automatic: "Веб-стандарт · MP3 резерв"
-            case .modern: "File info · стандарт / Lossless"
+            case .automatic: String(localized: "Веб-стандарт · MP3 резерв")
+            case .modern: String(localized: "File info · стандарт / Lossless")
             case .legacy: "Legacy · MP3"
             }
         }
@@ -201,15 +201,65 @@ actor YandexMusicService: MusicService {
         let uid = try await profile().id
         let result = try await playlistJSON(id)
         guard var playlist = playlistModel(result, currentUID: uid) else { throw MusicServiceError.invalidResponse }
-        let shorts = result["tracks"].array
-        // Hydrate short responses; preserve the server's order.
-        let ids = shorts.compactMap { item -> String? in
-            if let track = item["track"].track() { return track.id }
-            guard let id = item["id"].string else { return nil }
-            return item["albumId"].string.map { "\(id):\($0)" } ?? id
+        let entries = result["tracks"].array.map { item -> (track: Track?, id: String?) in
+            if let track = item["track"].track() ?? item.track() { return (track, track.id) }
+            guard let id = item["id"].string else { return (nil, nil) }
+            let key = id.contains(":") ? id : (item["albumId"].string.map { "\(id):\($0)" } ?? id)
+            return (nil, key)
         }
-        playlist.tracks = try await fetchTracks(ids)
+        let missing = entries.filter { $0.track == nil }.compactMap(\.id)
+        let hydrated: [Track]
+        do { hydrated = try await fetchTracks(missing) }
+        catch {
+            try Task.checkCancellation()
+            guard entries.contains(where: { $0.track != nil }) else { throw error }
+            hydrated = []
+        }
+        let byID = Dictionary(hydrated.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let byBaseID = Dictionary(hydrated.map { (Self.baseTrackID($0.id), $0) }, uniquingKeysWith: { first, _ in first })
+        playlist.tracks = entries.compactMap { entry in
+            if let track = entry.track { return track }
+            guard let id = entry.id else { return nil }
+            return byID[id] ?? byBaseID[Self.baseTrackID(id)]
+        }
         return playlist
+    }
+
+    nonisolated var supportsCloudUploads: Bool { true }
+
+    func uploadMP3(fileURL: URL, fileName: String, toPlaylistID playlistID: String) async throws -> Track {
+        let parts = try components(playlistID)
+        guard parts[0] == (try await profile().id), parts[1] != "3" else { throw MusicServiceError.forbidden }
+        let reply = try await request("loader/upload-url", query: [
+            "uid": parts[0], "playlist-id": playlistID, "visibility": "private", "path": fileName
+        ], form: [:], includesClientHeader: false, rawResponse: true)
+        let target = reply["result"]["post-target"].string == nil && reply["result"]["post_target"].string == nil
+            ? reply : reply["result"]
+        guard let address = target["post-target"].string ?? target["post_target"].string,
+              let uploadURL = URL(string: address), YandexUpload.isTrustedTarget(uploadURL),
+              let id = target["ugc-track-id"].string ?? target["ugc_track_id"].string else {
+            throw MusicServiceError.invalidResponse
+        }
+        try await YandexUpload.send(fileURL, to: uploadURL, fileName: fileName)
+        // The loader processes audio asynchronously. Never POST again on a confirmation timeout.
+        for attempt in 0..<10 {
+            if attempt > 0 { try await Task.sleep(for: .seconds(2)) }
+            guard let fresh = try? await playlistJSON(playlistID) else {
+                try Task.checkCancellation()
+                continue
+            }
+            if let row = fresh["tracks"].array.first(where: {
+                ($0["id"].string ?? $0["track"]["id"].string).map(Self.baseTrackID) == Self.baseTrackID(id)
+            }) {
+                var track = row["track"].track() ?? row.track()
+                if track == nil { track = try? await fetchTracks([id]).first }
+                if var track {
+                    track.isCloudUpload = true
+                    return track
+                }
+            }
+        }
+        throw MusicServiceError.message(String(localized: "Файл отправлен. Яндекс ещё обрабатывает запись — обновите плейлист перед повторной загрузкой."))
     }
 
     func createPlaylist(name: String) async throws -> Playlist {
@@ -225,11 +275,14 @@ actor YandexMusicService: MusicService {
         guard parts[0] == uid else { throw MusicServiceError.forbidden }
         let playlist = try await playlistJSON(playlistID)
         let trackParts = trackID.split(separator: ":").map(String.init)
-        guard trackParts.count == 2,
-              trackParts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) })
-        else { throw MusicServiceError.message("У трека нет идентификатора альбома.") }
+        guard (1...2).contains(trackParts.count), let first = trackParts.first,
+              (try? trackIdentifier(first)) != nil,
+              trackParts.count == 1 || trackParts[1].allSatisfy(\.isNumber)
+        else { throw MusicServiceError.invalidResponse }
+        var entry = ["id": first]
+        if trackParts.count == 2 { entry["albumId"] = trackParts[1] }
         let operation: [[String: Any]] = [["op": "insert", "at": Int(playlist["trackCount"].number ?? 0),
-                                          "tracks": [["id": trackParts[0], "albumId": trackParts[1]]]]]
+                                          "tracks": [entry]]]
         try await changePlaylist(parts: parts, revision: playlist["revision"].string, operations: operation)
     }
 
@@ -251,6 +304,11 @@ actor YandexMusicService: MusicService {
 
     func playbackAsset(for track: Track, quality: AudioQuality) async throws -> PlaybackAsset {
         let id = try trackIdentifier(track.id)
+        if track.isCloudUpload == true {
+            do { return try await legacyAsset(id: id, track: track, quality: .high) }
+            catch is CancellationError { throw CancellationError() }
+            catch { return try await modernAsset(id: id, track: track, quality: .high) }
+        }
         switch streamAPI {
         case .modern:
             return try await modernAsset(id: id, track: track, quality: quality)
@@ -312,7 +370,10 @@ actor YandexMusicService: MusicService {
     private func legacyAsset(id: String, track: Track, quality: AudioQuality) async throws -> PlaybackAsset {
         if quality == .lossless { throw MusicServiceError.message("Для Lossless нужен режим File info. Измените API воспроизведения в настройках.") }
         let result = try await request("tracks/\(id)/download-info")
-        guard let info = result.array.filter({ $0["preview"].bool == false && $0["codec"].string == "mp3" })
+        guard let info = result.array.filter({
+            ($0["preview"].bool == false || (track.isCloudUpload == true && $0["preview"].bool == nil))
+                && $0["codec"].string == "mp3"
+        })
             .max(by: { ($0["bitrateInKbps"].number ?? 0) < ($1["bitrateInKbps"].number ?? 0) }),
               let raw = info["downloadInfoUrl"].string, let descriptor = URL(string: raw), descriptor.scheme == "https"
         else { throw MusicServiceError.forbidden }
@@ -407,7 +468,7 @@ actor YandexMusicService: MusicService {
 
     private func playlistJSON(_ id: String) async throws -> YandexJSON {
         let parts = try components(id)
-        return try await request("users/\(parts[0])/playlists/\(parts[1])")
+        return try await request("users/\(parts[0])/playlists/\(parts[1])", query: ["rich-tracks": "true"])
     }
     private func components(_ id: String) throws -> [String] {
         let parts = id.split(separator: ":").map(String.init)
@@ -415,9 +476,15 @@ actor YandexMusicService: MusicService {
         return parts
     }
     private func trackIdentifier(_ id: String) throws -> String {
-        guard let value = id.split(separator: ":").first, !value.isEmpty, value.allSatisfy(\.isNumber) else { throw MusicServiceError.invalidResponse }
-        return String(value)
+        let value = Self.baseTrackID(id)
+        let numeric = !value.isEmpty && value.utf8.allSatisfy { (48...57).contains($0) }
+        let upload = value.hasPrefix("ugc-") && value.count <= 80 && value.utf8.allSatisfy {
+            (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 95
+        }
+        guard numeric || upload else { throw MusicServiceError.invalidResponse }
+        return value
     }
+    private static func baseTrackID(_ id: String) -> String { String(id.prefix { $0 != ":" }) }
     private func numericIdentifier(_ id: String) throws -> String {
         guard !id.isEmpty, id.allSatisfy(\.isNumber) else { throw MusicServiceError.invalidResponse }
         return id
@@ -441,7 +508,8 @@ actor YandexMusicService: MusicService {
         query: [String: String] = [:],
         form: [String: String]? = nil,
         jsonBody: [String: String]? = nil,
-        includesClientHeader: Bool = true
+        includesClientHeader: Bool = true,
+        rawResponse: Bool = false
     ) async throws -> YandexJSON {
         guard let token = await token(), !token.isEmpty else { throw MusicServiceError.unauthorized }
         var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false)!
@@ -480,7 +548,7 @@ actor YandexMusicService: MusicService {
         try Self.validate(response)
         let decoded = try JSONDecoder().decode(YandexJSON.self, from: data)
         if decoded["error"]["name"].string != nil { throw MusicServiceError.invalidResponse }
-        return decoded["result"]
+        return rawResponse ? decoded : decoded["result"]
     }
     private static func validate(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { throw MusicServiceError.invalidResponse }

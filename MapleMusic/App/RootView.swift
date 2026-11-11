@@ -124,9 +124,9 @@ private struct PresentedMusicError: Identifiable {
     var id: String { kind.rawValue + message }
     var title: String {
         switch kind {
-        case .playback: "Не удалось воспроизвести"
-        case .download: "Ошибка загрузки"
-        case .catalog: "Ошибка музыкального сервиса"
+        case .playback: String(localized: "Не удалось воспроизвести")
+        case .download: String(localized: "Ошибка загрузки")
+        case .catalog: String(localized: "Ошибка музыкального сервиса")
         }
     }
 }

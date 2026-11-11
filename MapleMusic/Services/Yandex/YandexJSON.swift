@@ -36,13 +36,17 @@ enum YandexJSON: Decodable, Sendable {
         let album = self["albums"].array.first ?? .null
         let artists = self["artists"].array
         let parsedArtists = artists.compactMap { $0.artist() }
-        let artistName = parsedArtists.isEmpty
+        let catalogArtist = parsedArtists.isEmpty
             ? artists.compactMap { $0["name"].string }.joined(separator: ", ")
             : parsedArtists.map(\.name).joined(separator: ", ")
+        let uploaded = self["filename"].string != nil || self["userInfo"]["uid"].string != nil
+            || self["ugcArtistName"].string != nil || self["trackSource"].string?.contains("UGC") == true
+            || self["type"].string?.lowercased() == "ugc" || id.hasPrefix("ugc-")
+        let artistName = catalogArtist.isEmpty ? self["ugcArtistName"].string ?? "" : catalogArtist
         let albumID = album["id"].string
         let available = self["available"].bool ?? false
         var parsedTrack = Track(
-            id: albumID.map { "\(id):\($0)" } ?? id,
+            id: uploaded || id.contains(":") ? id : (albumID.map { "\(id):\($0)" } ?? id),
             title: title,
             artist: Artist(
                 id: parsedArtists.first?.id ?? artists.first?["id"].string ?? "unknown",
@@ -55,9 +59,10 @@ enum YandexJSON: Decodable, Sendable {
             artwork: Artwork(url: Self.artworkURL(self["coverUri"].string ?? album["coverUri"].string)),
             isExplicit: self["contentWarning"].string == "explicit",
             downloadAllowed: available && (self["availableForPremiumUsers"].bool ?? available),
-            availableQualities: [.automatic, .high, .lossless]
+            availableQualities: uploaded ? [.high] : [.automatic, .high, .lossless]
         )
         parsedTrack.isrc = self["isrc"].string
+        parsedTrack.isCloudUpload = uploaded ? true : nil
         return parsedTrack
     }
 

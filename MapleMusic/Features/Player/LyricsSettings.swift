@@ -5,7 +5,7 @@ enum LyricsSource: String, CaseIterable, Identifiable, Codable {
     case service, lrclib, genius
     var id: Self { self }
     var title: String {
-        switch self { case .service: "Музыкальный сервис"; case .lrclib: "LRCLIB"; case .genius: "Genius" }
+        switch self { case .service: String(localized: "Музыкальный сервис"); case .lrclib: "LRCLIB"; case .genius: "Genius" }
     }
 }
 
@@ -67,7 +67,7 @@ final class LyricsSettings: ObservableObject {
 
     func fallbackLyrics(for track: Track) async throws -> Lyrics? {
         if let lyrics = try? await lrclib.lyrics(for: track), !lyrics.lines.isEmpty { return lyrics }
-        guard usesGeniusFallback, let token = try await vault.load(), !token.isEmpty else { return nil }
+        guard let token = try await vault.load(), !token.isEmpty else { return nil }
         return try await client.lyrics(for: track, accessToken: token)
     }
 
@@ -81,7 +81,7 @@ final class LyricsSettings: ObservableObject {
                 case .service: lyrics = try await service.lyrics(for: track)
                 case .lrclib: lyrics = try await lrclib.lyrics(for: track)
                 case .genius:
-                    guard usesGeniusFallback, let token = try await vault.load(), !token.isEmpty else { continue }
+                    guard let token = try await vault.load(), !token.isEmpty else { continue }
                     lyrics = try await client.lyrics(for: track, accessToken: token)
                 }
                 if let lyrics, !lyrics.lines.isEmpty { return lyrics }

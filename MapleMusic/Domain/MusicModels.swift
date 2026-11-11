@@ -13,15 +13,15 @@ enum AudioQuality: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .automatic, .high: "Стандартное"
-        case .lossless: "Lossless (Яндекс Плюс)"
+        case .automatic, .high: String(localized: "Стандартное")
+        case .lossless: String(localized: "Lossless (Яндекс Плюс)")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .automatic, .high: "Обычное качество веб-плеера, доступное без Плюса"
-        case .lossless: "FLAC, если качество доступно аккаунту"
+        case .automatic, .high: String(localized: "Обычное качество веб-плеера, доступное без Плюса")
+        case .lossless: String(localized: "FLAC, если качество доступно аккаунту")
         }
     }
 }
@@ -43,11 +43,11 @@ enum WaveMoodEnergy: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .all: "Любое"
-        case .fun: "Весёлое"
-        case .active: "Энергичное"
-        case .calm: "Спокойное"
-        case .sad: "Грустное"
+        case .all: String(localized: "Любое")
+        case .fun: String(localized: "Весёлое")
+        case .active: String(localized: "Энергичное")
+        case .calm: String(localized: "Спокойное")
+        case .sad: String(localized: "Грустное")
         }
     }
 }
@@ -62,10 +62,10 @@ enum WaveDiversity: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .default: "Сбалансированно"
-        case .favorite: "Больше любимых"
-        case .popular: "Популярные"
-        case .discover: "Больше нового"
+        case .default: String(localized: "Сбалансированно")
+        case .favorite: String(localized: "Больше любимых")
+        case .popular: String(localized: "Популярные")
+        case .discover: String(localized: "Больше нового")
         }
     }
 }
@@ -79,9 +79,9 @@ enum WaveLanguage: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .any: "Любой"
-        case .russian: "Русский"
-        case .notRussian: "Без русского"
+        case .any: String(localized: "Любой")
+        case .russian: String(localized: "Русский")
+        case .notRussian: String(localized: "Без русского")
         }
     }
 }
@@ -126,6 +126,7 @@ struct Track: Codable, Hashable, Identifiable, Sendable {
     let downloadAllowed: Bool
     let availableQualities: Set<AudioQuality>
     var isrc: String? = nil
+    var isCloudUpload: Bool? = nil
 
     init(
         id: String,
@@ -320,16 +321,18 @@ enum MusicServiceError: LocalizedError, Equatable {
     case invalidResponse
     case http(Int)
     case offlineUnavailable
+    case unsupportedFeature(String)
     case message(String)
 
     var errorDescription: String? {
         switch self {
         case .notConfigured: "Музыкальный сервис не настроен."
-        case .unauthorized: "Войдите в аккаунт, чтобы продолжить."
+        case .unauthorized: String(localized: "Войдите в аккаунт, чтобы продолжить.")
         case .forbidden: "Аккаунту недоступно воспроизведение этого трека."
         case .invalidResponse: "Музыкальный сервис вернул некорректный ответ."
         case let .http(status): "Музыкальный сервис вернул ошибку HTTP \(status)."
         case .offlineUnavailable: "Этот трек недоступен для офлайн-воспроизведения."
+        case let .unsupportedFeature(message): message
         case let .message(message): message
         }
     }

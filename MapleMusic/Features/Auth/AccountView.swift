@@ -72,7 +72,7 @@ struct AccountView: View {
                     NavigationLink {
                         MusicHapticsSettingsView(controller: player.haptics)
                     } label: {
-                        SettingsDestinationLabel(title: "Music Haptics", subtitle: "Музыка через прикосновения",
+                        SettingsDestinationLabel(title: "Тактильный отклик", subtitle: "Музыка через прикосновения",
                             systemImage: "waveform.path", color: .indigo)
                     }
 
@@ -146,10 +146,10 @@ private struct DeveloperSettingsView: View {
         List {
             Section {
                 Toggle(
-                    "Use new shader-based wave toggle",
+                    "Шейдер «Моей волны»",
                     isOn: $developerSettings.usesNewShaderBasedWave
                 )
-                Toggle("Show codename", isOn: $developerSettings.showsCodename)
+                Toggle("Показывать логотип", isOn: $developerSettings.showsCodename)
                 Toggle("Show literal crash response", isOn: $developerSettings.showsLiteralCrashResponse)
                 Toggle("New Retry screen", isOn: $developerSettings.usesNewRetryScreen)
                 NavigationLink("Последний ответ сервера") { DiagnosticResponseView() }
@@ -174,8 +174,8 @@ private struct SettingsDestinationLabel: View {
     var body: some View {
         Label {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).foregroundStyle(.primary)
-                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(LocalizedStringKey(title)).foregroundStyle(.primary)
+                Text(LocalizedStringKey(subtitle)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
         } icon: {
             Image(systemName: systemImage)
@@ -258,7 +258,7 @@ private struct AppearanceSettingsView: View {
     }
 }
 
-private struct AccountSettingsView: View {
+struct AccountSettingsView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var player: PlayerStore
@@ -281,10 +281,7 @@ private struct AccountSettingsView: View {
                         try? settings.apply(ProviderConfiguration())
                     }
                 }
-            } else if case let .signedIn(profile) = auth.state {
-                Section {
-                    Label(profile.displayName, systemImage: "person.crop.circle.fill")
-                }
+            } else if case .signedIn = auth.state {
                 Section {
                     Button("Очистить сессию и выйти", role: .destructive) {
                         showsClearSessionConfirmation = true
@@ -342,6 +339,30 @@ private struct AccountSettingsView: View {
                 }
             }
 
+            if settings.configuration.kind != .demo {
+                Section("Аккаунты") {
+                    if case let .signedIn(profile) = auth.state {
+                        Label(profile.displayName, systemImage: "person.crop.circle.fill")
+                    }
+                    ForEach(settings.accounts.keys.sorted().filter { $0 != settings.currentSlot }, id: \.self) { slot in
+                        Button {
+                            deviceLogin.cancel()
+                            player.stop()
+                            try? settings.switchAccount(slot)
+                        } label: {
+                            Label(settings.accounts[slot] ?? slot, systemImage: "person.crop.circle")
+                        }
+                    }
+                    if case .signedIn = auth.state {
+                        Button {
+                            player.stop()
+                            try? settings.addAccount()
+                        } label: {
+                            Label("Добавить аккаунт", systemImage: "person.crop.circle.badge.plus")
+                        }
+                    }
+                }
+            }
             if let error = auth.errorMessage ?? deviceLogin.error {
                 Section("Ошибка входа") {
                     Text(error).foregroundStyle(.red)
@@ -350,6 +371,9 @@ private struct AccountSettingsView: View {
         }
         .navigationTitle("Учётная запись")
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: auth.state, initial: true) { _, state in
+            if case let .signedIn(profile) = state { settings.rememberAccount(profile.displayName) }
+        }
         .onDisappear {
             deviceLogin.cancel()
             token = ""
@@ -388,14 +412,6 @@ private struct LyricsSettingsView: View {
                     settings.sourceOrder.move(fromOffsets: indices, toOffset: destination)
                 }
             }
-            .environment(\.editMode, .constant(.active))
-            Section {
-                Toggle("Использовать Genius как резерв", isOn: $settings.usesGeniusFallback)
-                    .disabled(!settings.hasGeniusToken)
-            } footer: {
-                Text("Перетащите источники в нужном порядке. Сохранённый текст доступен без сети. Genius пропускается, если ключ не настроен.")
-            }
-
             Section("Genius API") {
                 SecureField("Client Access Token", text: $token)
                     .textInputAutocapitalization(.never)
@@ -420,12 +436,8 @@ private struct LyricsSettingsView: View {
                 }
 
                 Link("Открыть страницу API-клиентов Genius", destination: URL(string: "https://genius.com/api-clients")!)
-            }
-
-            Section {
-                Text("Ключ хранится только на устройстве. Когда резерв включён, название трека и исполнитель отправляются Genius для поиска страницы песни; служебные подписи в квадратных скобках удаляются. Текст Genius не синхронизирован по времени.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            } footer: {
+                Text("Ключ хранится на устройстве. Genius использует название и исполнителя для поиска текста без синхронизации.")
             }
 
             if let error = settings.errorMessage {
@@ -435,6 +447,7 @@ private struct LyricsSettingsView: View {
             }
         }
         .navigationTitle("Тексты песен")
+        .environment(\.editMode, .constant(.active))
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -487,8 +500,10 @@ private struct AudioProviderSettingsView: View {
                 Text("Веб-стандарт запрашивает обычный поток как веб-плеер и не требует Плюса. MP3 используется как резерв. Lossless запрашивается отдельно и требует соответствующего доступа аккаунта.")
             }
 
-            Section {
-                Button("Применить") {
+        }
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
                     do {
                         if draft.kind != .demo { _ = try draft.validatedURL() }
                         player.stop()
@@ -497,7 +512,10 @@ private struct AudioProviderSettingsView: View {
                     } catch {
                         message = error.localizedDescription
                     }
+                } label: {
+                    Image(systemName: "checkmark")
                 }
+                .accessibilityLabel("Применить")
                 .disabled(draft == settings.configuration)
             }
         }
@@ -525,7 +543,7 @@ private struct StorageSettingsView: View {
 
     var body: some View {
         List {
-            Section("Офлайн-медиатека") {
+            Section {
                 LabeledContent("Загружено", value: downloads.entries.count.russianTrackCount)
                 LabeledContent("Размер", value: ByteCountFormatter.string(
                     fromByteCount: downloads.entries.reduce(0) { $0 + $1.byteCount },
@@ -537,38 +555,32 @@ private struct StorageSettingsView: View {
                 Label("Доступно в «Файлы» → «На iPhone» → Maple Music", systemImage: "folder.fill")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
-
-            Section {
                 Toggle(
                     "Автоскачивание при воспроизведении",
                     isOn: $downloadPreferences.automaticallyDownloadsPlayedTracks
                 )
+            } header: {
+                Text("Офлайн-медиатека")
             } footer: {
                 Text("После успешного запуска трек автоматически сохраняется в выбранном качестве. Уже загруженные треки пропускаются.")
             }
 
-            Section {
-                Button("Удалить все сохранённые треки", role: .destructive) {
+            Section("Очистка") {
+                Button("Треки", role: .destructive) {
                     showsClearDownloadsConfirmation = true
                 }
                 .tint(.red)
                 .disabled(downloads.entries.isEmpty || !downloads.activeTrackIDs.isEmpty)
-            }
-
-            Section("Очистить отдельно") {
-                ForEach(["Обложки", "Тексты песен", "Хаптики"], id: \.self) { category in
-                    Button(category, role: .destructive) { cacheToClear = category }.tint(.red)
+                ForEach(["Обложки", "Тексты песен", "Тактильный отклик"], id: \.self) { category in
+                    Button(role: .destructive) { cacheToClear = category } label: {
+                        Text(LocalizedStringKey(category))
+                    }
+                    .tint(.red)
                         .disabled(!downloads.activeTrackIDs.isEmpty)
                 }
                 if let cacheError { Text(cacheError).font(.footnote).foregroundStyle(.red) }
             }
 
-            Section {
-                Text("Файлы, тексты песен и манифест загрузок хранятся отдельно для каждого источника и аккаунта.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
         }
         .navigationTitle("Хранилище")
         .navigationBarTitleDisplayMode(.inline)
@@ -599,7 +611,7 @@ private struct StorageSettingsView: View {
                         switch category {
                         case "Обложки": ArtworkImageCache.shared.clear()
                         case "Тексты песен": try await player.clearLyricsCache()
-                        case "Хаптики": try await player.clearHapticsCache()
+                        case "Тактильный отклик": try await player.clearHapticsCache()
                         default: break
                         }
                         cacheError = nil
@@ -623,12 +635,13 @@ private struct AboutSettingsView: View {
                 LabeledContent("Bundle ID", value: Bundle.main.bundleIdentifier ?? "com.hikeri.yamusic")
             }
 
-            Section("Конфиденциальность") {
-                Label("Без аналитики и рекламных SDK", systemImage: "hand.raised.fill")
-                Label("Сессия защищена Keychain и Data Protection", systemImage: "key.fill")
-                Text("Офлайн-файлы защищены механизмом Data Protection в iOS.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            Section {
+                Link(destination: URL(string: "https://t.me/buybestcom")!) {
+                    Label("Разработчик · @buybestcom", systemImage: "paperplane.fill")
+                }
+                Link(destination: URL(string: "https://github.com/TopPlayer254/yandex-music-api-ios/issues")!) {
+                    Label("Сообщить о проблеме", systemImage: "exclamationmark.bubble")
+                }
             }
         }
         .navigationTitle("О приложении")

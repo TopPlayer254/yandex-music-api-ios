@@ -69,6 +69,20 @@ actor OfflineStore {
         return manifest.entries[trackID]?.lyrics
     }
 
+    func recommendationExclusions() -> Set<String> {
+        let url = root.appendingPathComponent("recommendation-exclusions.json")
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        return (try? JSONDecoder().decode(Set<String>.self, from: data)) ?? []
+    }
+
+    func setRecommendationExcluded(_ id: String, excluded: Bool) throws -> Set<String> {
+        var ids = recommendationExclusions()
+        if excluded { ids.insert(id) } else { ids.remove(id) }
+        try ensureRoot()
+        try JSONEncoder().encode(ids).write(to: root.appendingPathComponent("recommendation-exclusions.json"), options: .atomic)
+        return ids
+    }
+
     private func lyricsURL(_ id: String) -> URL {
         let key = SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
         return root.appendingPathComponent("Lyrics", isDirectory: true).appendingPathComponent(key + ".json")

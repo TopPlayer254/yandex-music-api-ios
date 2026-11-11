@@ -18,10 +18,27 @@ struct PlaybackScrubber: View {
             HStack {
                 Text(clock.time.musicTime)
                 Spacer()
+                PlaybackHapticsControl(controller: player.haptics)
+                Spacer()
                 Text("−\(max(player.duration - clock.time, 0).musicTime)")
             }
             .font(.caption2.monospacedDigit())
             .foregroundStyle(.white.opacity(0.62))
         }
+    }
+}
+
+private struct PlaybackHapticsControl: View {
+    @ObservedObject var controller: MusicHapticsController
+    var body: some View {
+        Button { controller.enabled.toggle() } label: {
+            Label("Тактильный отклик", systemImage: controller.enabled ? "waveform.path" : "waveform.path.badge.minus")
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(.white.opacity(controller.enabled ? 0.16 : 0.07), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white.opacity(controller.enabled ? 0.95 : 0.6))
+        .accessibilityValue(controller.enabled ? Text("Включено") : Text("Выключено"))
     }
 }

@@ -15,8 +15,8 @@ final class YandexProtocolTests: XCTestCase {
 
     func testQualityPickerSeparatesStandardFromLossless() {
         XCTAssertEqual(AudioQuality.selectableCases, [.high, .lossless])
-        XCTAssertEqual(AudioQuality.high.title, "Стандартное")
-        XCTAssertEqual(AudioQuality.lossless.title, "Lossless (Яндекс Плюс)")
+        XCTAssertEqual(AudioQuality.high.title, String(localized: "Стандартное", bundle: .main))
+        XCTAssertEqual(AudioQuality.lossless.title, String(localized: "Lossless (Яндекс Плюс)", bundle: .main))
     }
 
     func testYandexAACUsesM4AExtensionAndPassesContainerValidation() throws {

@@ -38,11 +38,6 @@ struct WaveSettingsView: View {
                     .pickerStyle(.navigationLink)
                 }
 
-                Section {
-                    Text("Параметры сохраняются в аккаунте Яндекс и применяются к следующей подборке «Моей волны».")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
             }
             .navigationTitle("Моя волна")
             .navigationBarTitleDisplayMode(.inline)
