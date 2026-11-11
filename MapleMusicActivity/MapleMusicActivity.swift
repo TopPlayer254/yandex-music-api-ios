@@ -42,7 +42,7 @@ struct PlaybackActivityWidget: Widget {
             } compactLeading: {
                 Image(systemName: "music.note").foregroundStyle(.yellow)
             } compactTrailing: {
-                Text(context.state.currentLine ?? "Текст песни").font(.caption).lineLimit(1).frame(maxWidth: 110)
+                Text(context.state.currentLine ?? String(localized: "Текст песни")).font(.caption).lineLimit(1).frame(maxWidth: 110)
             } minimal: {
                 Image(systemName: context.state.isPlaying ? "quote.bubble" : "pause.fill")
             }

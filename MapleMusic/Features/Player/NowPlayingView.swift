@@ -488,23 +488,33 @@ private struct LyricFlowMotion: ViewModifier {
     let line: Int
     let active: Int?
     let enabled: Bool
-    @State private var lift: CGFloat = 0
-    @State private var lastActive: Int?
+    @State private var pulse = Pulse()
+
+    private struct Pulse: Equatable {
+        var sequence = 0
+        var offset: CGFloat = 0
+        var delay = 0.0
+    }
 
     func body(content: Content) -> some View {
-        content.offset(y: lift)
-            .onChange(of: active, initial: true) { _, next in
-                let previous = lastActive
-                lastActive = next
+        content.keyframeAnimator(initialValue: CGFloat.zero, trigger: pulse) { view, offset in
+            view.offset(y: enabled ? offset : 0)
+        } keyframes: { _ in
+            KeyframeTrack(\.self) {
+                LinearKeyframe(CGFloat.zero, duration: 0.015 + pulse.delay)
+                SpringKeyframe(pulse.offset, duration: 0.16, spring: .snappy)
+                SpringKeyframe(CGFloat.zero, duration: 0.39, spring: .bouncy)
+                MoveKeyframe(CGFloat.zero)
+            }
+        }
+            .onChange(of: active) { previous, next in
                 guard enabled, let next, let previous, abs(next - previous) == 1,
                       (-1...5).contains(line - next) else { return }
                 let distance = max(line - next, 0)
-                let direction: CGFloat = next > previous ? 1 : -1
-                withTransaction(Transaction(animation: nil)) {
-                    lift = direction * CGFloat(10 + min(distance, 4) * 3)
-                }
-                withAnimation(.spring(response: 0.47, dampingFraction: 0.64)
-                    .delay(Double(min(distance, 4)) * 0.037)) { lift = 0 }
+                let direction: CGFloat = next > previous ? -1 : 1
+                pulse = Pulse(sequence: pulse.sequence + 1,
+                              offset: direction * CGFloat(13 - min(distance, 4)),
+                              delay: Double(min(distance, 4)) * 0.037)
             }
     }
 }
