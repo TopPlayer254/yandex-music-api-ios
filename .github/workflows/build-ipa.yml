@@ -37,6 +37,14 @@ jobs:
           echo "ARCHIVE_PATH=$RUNNER_TEMP/MapleMusic.xcarchive" >> "$GITHUB_ENV"
           echo "DERIVED_DATA=$RUNNER_TEMP/DerivedData" >> "$GITHUB_ENV"
 
+      - name: Ensure Metal Toolchain is installed
+        run: |
+          set -euo pipefail
+          if ! xcrun -sdk iphoneos metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+            xcrun -sdk iphoneos metal --version
+          fi
+
       - name: Install pinned XcodeGen
         env:
           XCODEGEN_VERSION: 2.46.0
