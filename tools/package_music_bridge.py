@@ -114,6 +114,11 @@ def package(original:Path, framework:Path, output:Path, simulator=False):
         if destination.exists(): raise ValueError('Original already includes the bridge')
         destination.parent.mkdir(exist_ok=True)
         shutil.copytree(framework,destination)
+        # Older bridge builds resolve the optional demo files in the app bundle.
+        # Newer frameworks carry their own copy of these resources.
+        demo=Path(__file__).resolve().parents[1]/'MapleMusic/Resources/DemoAudio'
+        if not (destination/'DemoAudio').is_dir() and demo.is_dir():
+            shutil.copytree(demo,app/'DemoAudio')
         info=plistlib.loads((app/'Info.plist').read_bytes())
         info['CFBundleIdentifier']=BUNDLE_ID
         info['CFBundleDisplayName']='Крешка'
