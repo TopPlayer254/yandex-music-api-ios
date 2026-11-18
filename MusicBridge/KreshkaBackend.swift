@@ -128,7 +128,8 @@ final class KreshkaBackend: NSObject {
             let liked = library.liked
             let albums = Dictionary(grouping: liked, by: { $0.albumID ?? $0.albumTitle }).map { key, values in
                 Album(id: key, title: values[0].albumTitle, artists: [values[0].artist],
-                      artwork: values[0].artwork, year: nil, genre: nil, tracks: values)
+                      artwork: values[0].artwork, year: nil, genre: nil, tracks: values,
+                      trackCount: values.count)
             }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
             let artists = Dictionary(grouping: liked, by: { $0.artist.id }).compactMap { $0.value.first?.artist }
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
