@@ -39,6 +39,8 @@ jobs:
           mkdir -p dist work/bridge-generated
           xcodegen generate --spec MusicBridge/project.yml --project MusicBridge
           xcodebuild -list -project MusicBridge/KreshkaBridge.xcodeproj
+      - name: Test Mach-O adapter tools
+        run: python3 -m unittest discover -s tools -p 'test_*music*.py' -v
       - name: Build device framework
         run: |
           set -euo pipefail
