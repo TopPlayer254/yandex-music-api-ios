@@ -5,6 +5,11 @@ on:
     branches: [codex/kreshka-music-bridge]
     paths:
       - MusicBridge/Smoke/**
+      - MusicBridge/KreshkaBackend.swift
+      - MusicBridge/RuntimeAdapter.m
+      - MusicBridge/project.yml
+      - MapleMusic/**
+      - Shared/**
       - .github/workflows/smoke-music-bridge.yml
 permissions:
   contents: read

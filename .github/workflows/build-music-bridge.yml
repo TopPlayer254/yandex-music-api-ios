@@ -11,6 +11,7 @@ on:
       - MapleMusic/**
       - Shared/**
       - tools/*music*.py
+      - .github/workflows/build-music-bridge.yml
 permissions:
   contents: read
 concurrency:
@@ -56,6 +57,16 @@ jobs:
             -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/device-derived" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO ARCHS=arm64e VALID_ARCHS=arm64e ONLY_ACTIVE_ARCH=YES
+      - name: Archive compiled device framework
+        run: |
+          ditto -c -k --keepParent "$RUNNER_TEMP/device-derived/Build/Products/Release-iphoneos/KreshkaBridge.framework" dist/KreshkaBridge-arm64e.zip
+      - name: Upload compiled framework before IPSW extraction
+        uses: actions/upload-artifact@v7
+        with:
+          name: KreshkaMusic-arm64e-framework
+          path: dist/KreshkaBridge-arm64e.zip
+          if-no-files-found: error
+          retention-days: 14
       - name: Fetch original Music from official Apple IPSW
         run: |
           set -euo pipefail
