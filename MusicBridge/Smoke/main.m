@@ -23,6 +23,7 @@
         NSCAssert(state[@"provider"], @"Backend was not initialized");
         NSLog(@"KRESHKA_SMOKE_READY provider=%@", state[@"provider"]);
         [@"ready" writeToFile:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/bridge-smoke.ready"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        ((void(*)(id,SEL))objc_msgSend)(object,NSSelectorFromString(@"presentAccount"));
     });
     return YES;
 }

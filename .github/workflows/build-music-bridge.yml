@@ -3,6 +3,14 @@ on:
   workflow_dispatch:
   push:
     branches: [codex/kreshka-music-bridge]
+    paths:
+      - MusicBridge/KreshkaBackend.swift
+      - MusicBridge/RuntimeAdapter.m
+      - MusicBridge/project.yml
+      - MusicBridge/Extract/**
+      - MapleMusic/**
+      - Shared/**
+      - tools/*music*.py
 permissions:
   contents: read
 concurrency:
@@ -59,7 +67,17 @@ jobs:
             --framework "$RUNNER_TEMP/device-derived/Build/Products/Release-iphoneos/KreshkaBridge.framework" \
             --output dist/KreshkaMusic-original-UI-experimental-unsigned.ipa
           python3 tools/audit_music_private_api.py "$ORIGINAL_MUSIC_APP" --output dist/original-private-api
+      - name: Upload modified IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: KreshkaMusic-original-UI-experimental
+          path: |
+            dist/KreshkaMusic-original-UI-experimental-unsigned.ipa
+            dist/KreshkaMusic-original-UI-experimental-unsigned.report.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Find available iPhone simulator
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           simulator_id="$(xcrun simctl list devices available --json | jq -r '[.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone")))] | first | .udid // empty')"
@@ -68,13 +86,15 @@ jobs:
           xcrun simctl boot "$simulator_id" || true
           xcrun simctl bootstatus "$simulator_id" -b
       - name: Build simulator smoke host
+        timeout-minutes: 10
         run: |
           set -euo pipefail
           xcodebuild build -project MusicBridge/KreshkaBridge.xcodeproj -scheme BridgeSmoke \
             -configuration Debug -sdk iphonesimulator \
             -destination "platform=iOS Simulator,id=$BRIDGE_SIMULATOR" \
-            -derivedDataPath "$RUNNER_TEMP/sim-derived" CODE_SIGNING_ALLOWED=NO
+            -derivedDataPath "$RUNNER_TEMP/sim-derived" CODE_SIGNING_ALLOWED=NO ARCHS=x86_64 ONLY_ACTIVE_ARCH=YES
       - name: Verify bridge startup without crashing
+        timeout-minutes: 3
         run: |
           set -euo pipefail
           app="$RUNNER_TEMP/sim-derived/Build/Products/Debug-iphonesimulator/BridgeSmoke.app"
@@ -126,16 +146,6 @@ jobs:
             xcrun simctl spawn "$BRIDGE_SIMULATOR" log show --last 10m --style compact --predicate 'eventMessage CONTAINS "KRESHKA" OR process == "BridgeSmoke"' > dist/runtime-diagnostics.log 2>&1 || true
           fi
           find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f \( -name 'BridgeSmoke*' -o -name 'Music-*' \) -exec cp {} dist/ \; 2>/dev/null || true
-      - name: Upload modified IPA
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: KreshkaMusic-original-UI-experimental
-          path: |
-            dist/KreshkaMusic-original-UI-experimental-unsigned.ipa
-            dist/KreshkaMusic-original-UI-experimental-unsigned.report.json
-          if-no-files-found: ignore
-          retention-days: 14
       - name: Upload simulator and dependency diagnostics
         if: always()
         uses: actions/upload-artifact@v7

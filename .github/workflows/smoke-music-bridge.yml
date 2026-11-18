@@ -1,0 +1,79 @@
+name: Kreshka bridge simulator screens
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/kreshka-music-bridge]
+    paths:
+      - MusicBridge/Smoke/**
+      - .github/workflows/smoke-music-bridge.yml
+permissions:
+  contents: read
+concurrency:
+  group: kreshka-simulator-screens
+  cancel-in-progress: true
+jobs:
+  screens:
+    runs-on: macos-26-intel
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Generate project
+        run: |
+          set -euo pipefail
+          mkdir -p dist work/bridge-generated "$RUNNER_TEMP/xcodegen"
+          curl --fail --location --retry 5 https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          ditto -x -k "$RUNNER_TEMP/xcodegen.zip" "$RUNNER_TEMP/xcodegen"
+          "$RUNNER_TEMP/xcodegen/xcodegen/bin/xcodegen" generate --spec MusicBridge/project.yml --project MusicBridge
+      - name: Build Intel simulator host
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          xcodebuild build -project MusicBridge/KreshkaBridge.xcodeproj -scheme BridgeSmoke \
+            -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/sim-derived" CODE_SIGNING_ALLOWED=NO ARCHS=x86_64 ONLY_ACTIVE_ARCH=YES
+      - name: Boot latest installed iPhone simulator
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys,re; d=json.load(sys.stdin); candidates=[(tuple(map(int,re.findall(r"\d+",runtime))),dev["udid"]) for runtime,devices in d["devices"].items() for dev in devices if dev.get("isAvailable") and dev["name"].startswith("iPhone")]; print(max(candidates)[1])')"
+          echo "BRIDGE_SIMULATOR=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id" || true
+          xcrun simctl bootstatus "$simulator_id" -b
+      - name: Launch, check liveness and capture account screen
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/sim-derived/Build/Products/Release-iphonesimulator/BridgeSmoke.app"
+          codesign --force --deep --sign - "$app"
+          xcrun simctl install "$BRIDGE_SIMULATOR" "$app"
+          launch="$(xcrun simctl launch --terminate-running-process "$BRIDGE_SIMULATOR" dev.hikeri.kreshka.music.smoke)"
+          echo "$launch"
+          pid="${launch##*: }"
+          sleep 12
+          ps -p "$pid" -o comm=
+          container="$(xcrun simctl get_app_container "$BRIDGE_SIMULATOR" dev.hikeri.kreshka.music.smoke data)"
+          test -s "$container/Documents/bridge-smoke.ready"
+          cp "$container/Documents/bridge-smoke.ready" dist/bridge-smoke.ready
+          cp -R "$container/Documents/Kreshka" dist/ 2>/dev/null || true
+          xcrun simctl io "$BRIDGE_SIMULATOR" screenshot dist/kreshka-account-simulator.png
+          echo '{"bridge_smoke":"passed","screen":"bridge account sheet","device_music_app_verified":false}' > dist/simulator-status.json
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p dist
+          if [[ -n "${BRIDGE_SIMULATOR:-}" ]]; then
+            xcrun simctl spawn "$BRIDGE_SIMULATOR" log show --last 5m --style compact --predicate 'process == "BridgeSmoke"' > dist/simulator.log 2>&1 || true
+          fi
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -name 'BridgeSmoke*' -type f -exec cp {} dist/ \; 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: KreshkaMusic-account-simulator-screens
+          path: dist/
+          if-no-files-found: ignore
+          retention-days: 14
