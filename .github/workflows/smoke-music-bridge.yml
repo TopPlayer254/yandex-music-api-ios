@@ -40,14 +40,14 @@ jobs:
         timeout-minutes: 5
         run: |
           set -euo pipefail
-          simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys,re; d=json.load(sys.stdin); candidates=[(tuple(map(int,re.findall(r"\d+",runtime))),dev["udid"]) for runtime,devices in d["devices"].items() for dev in devices if dev.get("isAvailable") and dev["name"].startswith("iPhone")]; print(max(candidates)[1])')"
+          simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys,re; d=json.load(sys.stdin); candidates=[(tuple(map(int,re.findall(r"\d+",runtime))),dev["udid"]) for runtime,devices in d["devices"].items() for dev in devices if dev.get("isAvailable") and dev["name"].startswith("iPhone") and tuple(map(int,re.findall(r"\d+",runtime)))[:2] <= (26,5)]; print(max(candidates)[1])')"
           echo "BRIDGE_SIMULATOR=$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl boot "$simulator_id" || true
           xcrun simctl bootstatus "$simulator_id" -b
       - name: Launch, check liveness and capture account screen
-        timeout-minutes: 3
+        timeout-minutes: 5
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           app="$RUNNER_TEMP/sim-derived/Build/Products/Release-iphonesimulator/BridgeSmoke.app"
           codesign --force --deep --sign - "$app"
           xcrun simctl install "$BRIDGE_SIMULATOR" "$app"

@@ -3,7 +3,7 @@ import struct
 import unittest
 
 from macho_audit import dylib_loads
-from package_music_bridge import patch_macho, BRIDGE_LOAD, CORE_ANALYTICS
+from package_music_bridge import patch_macho, validate_architecture, BRIDGE_LOAD, CORE_ANALYTICS
 
 
 def fixture(padding=True,analytics=False):
@@ -57,8 +57,25 @@ class PackageMusicBridgeTests(unittest.TestCase):
     def test_analytics_imports_point_to_noop_exports_without_ordinal_shift(self):
         original,offset=fixture(analytics=True)
         patched=patch_macho(original,BRIDGE_LOAD)
-        self.assertEqual([i[3] for i in dylib_loads(patched)],[BRIDGE_LOAD,'/usr/lib/libobjc.A.dylib',BRIDGE_LOAD])
+        self.assertEqual([i[3] for i in dylib_loads(patched)],[BRIDGE_LOAD,'/usr/lib/libobjc.A.dylib'])
         self.assertEqual(original[offset:offset+16],patched[offset:offset+16])
+
+    def test_injection_is_idempotent_and_never_duplicates_bridge(self):
+        original,_=fixture(analytics=True)
+        once=patch_macho(original,BRIDGE_LOAD)
+        twice=patch_macho(once,BRIDGE_LOAD)
+        self.assertEqual(once,twice)
+        names=[i[3] for i in dylib_loads(twice)]
+        self.assertEqual(names.count(BRIDGE_LOAD),1)
+        self.assertEqual(len(names),len(set(names)))
+
+    def test_arm64_is_not_an_arm64e_bridge(self):
+        main,_=fixture()
+        generic=bytearray(main)
+        struct.pack_into('<I',generic,8,0)
+        with self.assertRaisesRegex(ValueError,'arm64e'):
+            validate_architecture(main,bytes(generic))
+        validate_architecture(main,main)
 
 
 if __name__=='__main__': unittest.main()

@@ -2,6 +2,10 @@
 
 Bundle ID of the modified app: `dev.hikeri.kreshka.music`.
 
+The device framework must be compiled for **arm64e**, matching the original
+executable. An arm64-only framework is rejected by the device loader. The
+packager validates the CPU subtype and prohibits duplicate dylib loads.
+
 This build keeps the iOS 26.5.1 Music executable/UI and injects
 `KreshkaBridge.framework`. It is an experimental interoperability build, not a
 completed backend port. The package report deliberately records
@@ -24,7 +28,9 @@ Implemented boundaries:
 - A Yandex account sheet is offered at startup; native navigation screens get
   an account button. Runtime logs are saved to `Documents/Kreshka/bridge.log`.
 
-The packager appends one library load without renumbering the original imports,
+The packager loads the bridge through the replacement CoreAnalytics dependency;
+if that dependency is absent, it appends exactly one bridge load. Duplicate load
+commands are rejected, without renumbering the original imports. It
 removes original code signatures/profiles, removes system extensions/XPC bundles,
 preserves original UI resources, and emits an unsigned IPA for external signing.
 Private UI frameworks remain, as requested. Library loading alone does not

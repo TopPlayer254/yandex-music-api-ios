@@ -20,6 +20,17 @@ BRIDGE_LOAD='@executable_path/Frameworks/KreshkaBridge.framework/KreshkaBridge'
 CORE_ANALYTICS='/System/Library/PrivateFrameworks/CoreAnalytics.framework/CoreAnalytics'
 
 
+def validate_architecture(executable:bytes, framework:bytes):
+    if executable[:4]!=b'\xcf\xfa\xed\xfe' or framework[:4]!=b'\xcf\xfa\xed\xfe':
+        raise ValueError('Expected thin 64-bit Mach-O images')
+    cpu,subtype=struct.unpack_from('<II',executable,4)
+    bridge_cpu,bridge_subtype=struct.unpack_from('<II',framework,4)
+    if cpu!=bridge_cpu:
+        raise ValueError('Main executable and bridge use different CPU architectures')
+    if cpu==0x100000C and (subtype&0xFFFFFF)==2 and (bridge_subtype&0xFFFFFF)!=2:
+        raise ValueError('The original arm64e process requires a real arm64e bridge, not arm64')
+
+
 def patch_macho(data:bytes, inject:str|None=None) -> bytes:
     if data[:4]!=b'\xcf\xfa\xed\xfe':
         raise ValueError('Only thin little-endian 64-bit Mach-O is supported')
@@ -28,6 +39,7 @@ def patch_macho(data:bytes, inject:str|None=None) -> bytes:
     if 32+size>len(image): raise ValueError('Invalid load-command extent')
     cursor=32
     commands=[]
+    loaded_paths=[]
     first_section=len(image)
     for _ in range(count):
         command,span=struct.unpack_from('<II',image,cursor)
@@ -40,6 +52,8 @@ def patch_macho(data:bytes, inject:str|None=None) -> bytes:
                 replacement=BRIDGE_LOAD.encode()+b'\0'
                 if len(replacement)>span-name_offset: raise ValueError('Analytics replacement does not fit')
                 record=record[:name_offset]+replacement+b'\0'*(span-name_offset-len(replacement))
+                name=BRIDGE_LOAD
+            loaded_paths.append(name)
         if command==0x19:
             sections=struct.unpack_from('<I',record,64)[0]
             if 72+80*sections>span: raise ValueError('Invalid segment sections')
@@ -52,10 +66,13 @@ def patch_macho(data:bytes, inject:str|None=None) -> bytes:
             image[offset:offset+length]=b'\0'*length
         else: commands.append(record)
         cursor += span
-    if inject:
+    if inject and inject not in loaded_paths:
         name=inject.encode()+b'\0'
         span=(24+len(name)+7)&~7
         commands.append(struct.pack('<6I',0xC,span,24,0,0x10000,0x10000)+name+b'\0'*(span-24-len(name)))
+        loaded_paths.append(inject)
+    if len(loaded_paths)!=len(set(loaded_paths)):
+        raise ValueError('Duplicate linked dylib; dyld would reject this image')
     payload=b''.join(commands)
     if 32+len(payload)>first_section:
         raise ValueError('Insufficient header padding; sections must not be overwritten')
@@ -71,6 +88,7 @@ def package(original:Path, framework:Path, output:Path, simulator=False):
     if not simulator and source_hash!=ORIGINAL_SHA256:
         raise ValueError('Unexpected original Music binary; refusing version-specific patch')
     if not (framework/'KreshkaBridge').is_file(): raise ValueError('Compiled KreshkaBridge framework is missing')
+    validate_architecture((original/source_executable).read_bytes(),(framework/'KreshkaBridge').read_bytes())
     with tempfile.TemporaryDirectory(prefix='kreshka-package-') as temporary:
         app=Path(temporary)/'Payload/Music.app'
         shutil.copytree(original,app)
@@ -111,7 +129,8 @@ def package(original:Path, framework:Path, output:Path, simulator=False):
         for path in sorted(app.rglob('_CodeSignature'),key=lambda p:len(p.parts),reverse=True):
             if path.is_dir(): shutil.rmtree(path)
         loads=[name for _,_,_,name in dylib_loads((app/source_executable).read_bytes())]
-        expected=[BRIDGE_LOAD if name==CORE_ANALYTICS else name for name in original_loads]+[BRIDGE_LOAD]
+        expected=[BRIDGE_LOAD if name==CORE_ANALYTICS else name for name in original_loads]
+        if BRIDGE_LOAD not in expected: expected.append(BRIDGE_LOAD)
         if loads!=expected: raise ValueError('Original library ordinals changed')
         output.parent.mkdir(parents=True,exist_ok=True)
         with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as archive:
