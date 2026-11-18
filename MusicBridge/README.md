@@ -16,6 +16,8 @@ Implemented boundaries:
 - Apple Music catalogue HTTP requests from NSURLSession are adapted to our
   service. Unsupported Apple endpoints fail explicitly; their original online
   implementation is not used by this protocol handler.
+- The pinned binary's two direct CoreAnalytics imports are redirected to
+  no-op exports in the bridge, without invoking lazy analytics payload blocks.
 - Compatible `MPCPlayerCommandRequest.performWithCompletion:` implementations
   are routed to PlayerStore. Other MPC/Swift MusicKit paths remain unverified;
   this is not complete coverage of the original player's command/data pipeline.
@@ -31,7 +33,7 @@ replace privileged Apple XPC operations; those paths require device debugging.
 Build:
 
 1. GitHub Actions `Build original Music UI bridge IPA` builds the framework with
-   Xcode 26.3 on `macos-15-intel`.
+   Xcode 26.5 on `macos-26-intel`.
 2. A pinned open-source extractor reads the original app from Apple's official
    IPSW through HTTP ranges. Apple binaries are not committed to the repository.
 3. A separate simulator host loads the same bridge and initializes its backend;

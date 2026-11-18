@@ -12,11 +12,12 @@ import struct
 import tempfile
 import zipfile
 
-from macho_audit import is_macho, dylib_loads
+from macho_audit import is_macho, dylib_loads, DYLIB_COMMANDS
 
 BUNDLE_ID='dev.hikeri.kreshka.music'
 ORIGINAL_SHA256='1111db60f9e19436b30f732dde0f9d0cbaf0b1127bee1d3ca3bee33ba3dedd2a'
 BRIDGE_LOAD='@executable_path/Frameworks/KreshkaBridge.framework/KreshkaBridge'
+CORE_ANALYTICS='/System/Library/PrivateFrameworks/CoreAnalytics.framework/CoreAnalytics'
 
 
 def patch_macho(data:bytes, inject:str|None=None) -> bytes:
@@ -32,6 +33,13 @@ def patch_macho(data:bytes, inject:str|None=None) -> bytes:
         command,span=struct.unpack_from('<II',image,cursor)
         if span<8 or cursor+span>32+size: raise ValueError('Invalid load command')
         record=bytes(image[cursor:cursor+span])
+        if command in DYLIB_COMMANDS and command != 0xD:
+            name_offset=struct.unpack_from('<I',record,8)[0]
+            name=record[name_offset:].split(b'\0',1)[0].decode()
+            if name==CORE_ANALYTICS:
+                replacement=BRIDGE_LOAD.encode()+b'\0'
+                if len(replacement)>span-name_offset: raise ValueError('Analytics replacement does not fit')
+                record=record[:name_offset]+replacement+b'\0'*(span-name_offset-len(replacement))
         if command==0x19:
             sections=struct.unpack_from('<I',record,64)[0]
             if 72+80*sections>span: raise ValueError('Invalid segment sections')
@@ -103,7 +111,8 @@ def package(original:Path, framework:Path, output:Path, simulator=False):
         for path in sorted(app.rglob('_CodeSignature'),key=lambda p:len(p.parts),reverse=True):
             if path.is_dir(): shutil.rmtree(path)
         loads=[name for _,_,_,name in dylib_loads((app/source_executable).read_bytes())]
-        if loads!=original_loads+[BRIDGE_LOAD]: raise ValueError('Original library ordinals changed')
+        expected=[BRIDGE_LOAD if name==CORE_ANALYTICS else name for name in original_loads]+[BRIDGE_LOAD]
+        if loads!=expected: raise ValueError('Original library ordinals changed')
         output.parent.mkdir(parents=True,exist_ok=True)
         with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as archive:
             for path in sorted(app.rglob('*')):
@@ -117,6 +126,7 @@ def package(original:Path, framework:Path, output:Path, simulator=False):
             if archive.testzip(): raise ValueError('IPA ZIP integrity check failed')
         report={'bundle_id':BUNDLE_ID,'original_sha256':source_hash,'original_ui_retained':True,
                 'bridge':'KreshkaBridge 0.1.0-experimental','apple_backend_fully_replaced':False,
+                'direct_coreanalytics_imports_disabled':['AnalyticsSendEvent','AnalyticsSendEventLazy'],
                 'runtime_device_verified':False,'simulator_package':simulator,
                 'unsigned_macho_files':stripped,'ipa_sha256':hashlib.sha256(output.read_bytes()).hexdigest(),
                 'limitations':['Private method adapters are conditional on runtime ABI.',

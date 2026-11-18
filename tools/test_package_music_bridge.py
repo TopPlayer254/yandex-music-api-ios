@@ -3,15 +3,15 @@ import struct
 import unittest
 
 from macho_audit import dylib_loads
-from package_music_bridge import patch_macho, BRIDGE_LOAD
+from package_music_bridge import patch_macho, BRIDGE_LOAD, CORE_ANALYTICS
 
 
-def fixture(padding=True):
+def fixture(padding=True,analytics=False):
     def load(name):
         encoded=name.encode()+b'\0'
         size=(24+len(encoded)+7)&~7
         return struct.pack('<6I',0xc,size,24,0,0,0)+encoded+b'\0'*(size-24-len(encoded))
-    libraries=load('/usr/lib/libSystem.B.dylib')+load('/usr/lib/libobjc.A.dylib')
+    libraries=load(CORE_ANALYTICS if analytics else '/usr/lib/libSystem.B.dylib')+load('/usr/lib/libobjc.A.dylib')
     extent=32+152+len(libraries)+16
     offset=512 if padding else extent
     segment=struct.pack('<II16sQQQQIIII',0x19,152,b'__TEXT',0,1024,0,1024,5,5,1,0)
@@ -53,6 +53,12 @@ class PackageMusicBridgeTests(unittest.TestCase):
 
     def test_other_macho_formats_are_rejected(self):
         with self.assertRaises(ValueError): patch_macho(b'\xca\xfe\xba\xbe'+b'\0'*80)
+
+    def test_analytics_imports_point_to_noop_exports_without_ordinal_shift(self):
+        original,offset=fixture(analytics=True)
+        patched=patch_macho(original,BRIDGE_LOAD)
+        self.assertEqual([i[3] for i in dylib_loads(patched)],[BRIDGE_LOAD,'/usr/lib/libobjc.A.dylib',BRIDGE_LOAD])
+        self.assertEqual(original[offset:offset+16],patched[offset:offset+16])
 
 
 if __name__=='__main__': unittest.main()

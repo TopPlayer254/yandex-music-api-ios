@@ -5,6 +5,13 @@
 #include <string.h>
 
 static char KreshkaIdentifierKey;
+// These are the only direct CoreAnalytics symbols imported by the pinned
+// original binary. Its CoreAnalytics load is redirected to this framework.
+__attribute__((visibility("default")))
+void AnalyticsSendEvent(NSString *event,NSDictionary *payload) { }
+__attribute__((visibility("default")))
+void AnalyticsSendEventLazy(NSString *event,NSDictionary *(^payload)(void)) { }
+
 static NSMutableSet<NSString *> *installedHooks;
 static id KCall0(id object, NSString *name) {
     SEL selector=NSSelectorFromString(name);
