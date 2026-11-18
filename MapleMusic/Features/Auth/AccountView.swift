@@ -412,7 +412,7 @@ private struct LyricsSettingsView: View {
                     settings.sourceOrder.move(fromOffsets: indices, toOffset: destination)
                 }
             }
-            Section("Genius API") {
+            Section {
                 SecureField("Client Access Token", text: $token)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -436,6 +436,8 @@ private struct LyricsSettingsView: View {
                 }
 
                 Link("Открыть страницу API-клиентов Genius", destination: URL(string: "https://genius.com/api-clients")!)
+            } header: {
+                Text("Genius API")
             } footer: {
                 Text("Ключ хранится на устройстве. Genius использует название и исполнителя для поиска текста без синхронизации.")
             }
