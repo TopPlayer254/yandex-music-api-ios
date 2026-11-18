@@ -1,10 +1,14 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <MediaPlayer/MediaPlayer.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <dlfcn.h>
 #include <string.h>
 
 static char KreshkaIdentifierKey;
+static NSMutableDictionary<NSNumber *,NSString *> *libraryIdentifiers;
+static void KInstallModels(void);
 // These are the only direct CoreAnalytics symbols imported by the pinned
 // original binary. Its CoreAnalytics load is redirected to this framework.
 __attribute__((visibility("default")))
@@ -96,13 +100,19 @@ static void KFinish(id block,id value,NSError *error) {
 }
 
 static NSString *KIdentifier(id object,NSUInteger depth) {
-    if (!object || depth>4) return nil;
+    if (!object || depth>10) return nil;
     NSString *identifier=objc_getAssociatedObject(object,&KreshkaIdentifierKey);
     if (identifier.length) return identifier;
     if ([object isKindOfClass:NSString.class]) {
         if ([object hasPrefix:@"kr:"]) return [object substringFromIndex:3];
         return nil;
     }
+    NSString *content=KGet(object,@"contentItemID");
+    if ([content isKindOfClass:NSString.class] && [content hasPrefix:@"kr:"]) return [content substringFromIndex:3];
+    NSString *vendor=KGet(object,@"vendorID");
+    if ([vendor isKindOfClass:NSString.class] && [vendor hasPrefix:@"kr:"]) return [vendor substringFromIndex:3];
+    NSString *libraryID=libraryIdentifiers[KGet(object,@"deviceLibraryPersistentID") ?: @0];
+    if (libraryID) return libraryID;
     if ([object isKindOfClass:NSArray.class]) {
         for (id value in object) { identifier=KIdentifier(value,depth+1); if (identifier) return identifier; }
         return nil;
@@ -111,7 +121,7 @@ static NSString *KIdentifier(id object,NSUInteger depth) {
         for (id value in [object allValues]) { identifier=KIdentifier(value,depth+1); if (identifier) return identifier; }
         return nil;
     }
-    for (NSString *key in @[@"contentItemID",@"identifiers",@"modelObject",@"song",@"item",@"items",@"options",@"playbackContext",@"context"]) {
+    for (NSString *key in @[@"identifiers",@"startItemIdentifiers",@"allowedItemIdentifiers",@"scopedContainers",@"modelObject",@"song",@"item",@"items",@"options",@"playbackContext",@"context",@"request"]) {
         identifier=KIdentifier(KGet(object,key),depth+1); if (identifier) return identifier;
     }
     return nil;
@@ -121,7 +131,16 @@ static id KModel(NSString *kind,NSDictionary *value);
 static id KIdentifiers(NSString *identifier) {
     Class cls=NSClassFromString(@"MPIdentifierSet");
     id allocated=[cls alloc];
-    void(^populate)(id)=^(id mutable){ KSet(mutable,@"contentItemID",[@"kr:" stringByAppendingString:identifier]); KSet(mutable,@"vendorID",identifier); };
+    uint64_t persistentID=14695981039346656037ULL;
+    NSData *bytes=[identifier dataUsingEncoding:NSUTF8StringEncoding];
+    for (NSUInteger i=0;i<bytes.length;i++) { persistentID^=((const uint8_t *)bytes.bytes)[i]; persistentID*=1099511628211ULL; }
+    persistentID=(persistentID & INT64_MAX) ?: 1;
+    libraryIdentifiers[@(persistentID)]=identifier;
+    void(^populate)(id)=^(id mutable){
+        KSet(mutable,@"contentItemID",[@"kr:" stringByAppendingString:identifier]);
+        KSet(mutable,@"vendorID",[@"kr:" stringByAppendingString:identifier]);
+        KSet(mutable,@"deviceLibraryPersistentID",@(persistentID));
+    };
     id result=nil;
     SEL modern=NSSelectorFromString(@"initWithSource:modelKind:block:");
     if ([allocated respondsToSelector:modern]) {
@@ -195,7 +214,7 @@ static id KModel(NSString *kind,NSDictionary *value) {
 }
 
 static NSString *KRequestKind(id request) {
-    NSString *name=NSStringFromClass([KGet(request,@"itemKind") class]);
+    NSString *name=NSStringFromClass(KCall0(request,@"itemClass")) ?: NSStringFromClass([KGet(request,@"itemKind") class]);
     if ([name containsString:@"Album"]) return @"album";
     if ([name containsString:@"Artist"]) return @"artist";
     if ([name containsString:@"Playlist"]) return @"playlist";
@@ -207,24 +226,37 @@ static void KModelRequest(id request,id completion) {
     completion=[completion copy];
     NSString *kind=KRequestKind(request);
     NSString *query=KGet(request,@"searchString") ?: KGet(request,@"searchTerm") ?: @"";
-    NSString *identifier=KIdentifier(KGet(request,@"sectionIdentifiers"),0);
-    KExecute(@"catalog",@{@"kind":kind,@"query":query,@"id":identifier ?: @""},^(NSDictionary *result,NSError *error){
-        if (error) { KFinish(completion,nil,error); return; }
+    NSString *identifier=KIdentifier(KGet(request,@"scopedContainers"),0) ?: KIdentifier(KGet(request,@"sectionIdentifiers"),0);
+    NSString *containerKind=kind;
+    for (id scope in KGet(request,@"scopedContainers")) {
+        NSString *name=NSStringFromClass([scope class]);
+        if ([name containsString:@"Playlist"]) containerKind=@"playlist";
+        else if ([name containsString:@"Album"]) containerKind=@"album";
+        else if ([name containsString:@"Artist"]) containerKind=@"artist";
+    }
+    NSMutableArray *ids=[NSMutableArray new];
+    for (id value in KGet(request,@"allowedItemIdentifiers")) {
+        NSString *itemID=KIdentifier(value,0); if (itemID) [ids addObject:itemID];
+    }
+    KExecute(@"catalog",@{@"kind":kind,@"containerKind":containerKind,@"query":query,@"id":identifier ?: @"",@"ids":ids},^(NSDictionary *result,NSError *error){
+        if (error) { KLog([NSString stringWithFormat:@"catalog %@ failed %@ %ld",NSStringFromClass([request class]),error.domain,(long)error.code]); KFinish(completion,nil,error); return; }
         @try {
             Class responseClass=KCall0([request class],@"responseClass");
+            if (!responseClass && [request isKindOfClass:NSClassFromString(@"MPModelLibraryRequest")]) responseClass=NSClassFromString(@"MPModelLibraryResponse");
             if (!responseClass || ![responseClass isSubclassOfClass:NSClassFromString(@"MPModelResponse")]) responseClass=NSClassFromString(@"MPModelResponse");
             id response=KCall1([responseClass alloc],@"initWithRequest:",request);
             id collection=[NSClassFromString(@"MPMutableSectionedCollection") new];
             NSString *key=@{@"song":@"tracks",@"album":@"albums",@"artist":@"artists",@"playlist":@"playlists"}[kind];
-            // The section object is a model, rather than a Foundation string.
-            id section=KModel(@"playlist",@{@"id":@"library",@"name":@"Медиатека"});
+            // An unsectioned library request expects a generic section, not a
+            // playlist masquerading as an album/artist section.
+            id section=[NSClassFromString(@"MPModelObject") new];
             KSend1(collection,@"appendSection:",section);
             for (NSDictionary *value in result[key] ?: @[]) {
                 id model=KModel(kind,value); if (model) KSend1(collection,@"appendItem:",model);
             }
             KSet(response,@"results",collection);
             if (!response || !collection) { KFinish(completion,nil,KError(@"Original model response API is unavailable")); return; }
-            KLog([NSString stringWithFormat:@"catalog %@ -> %@",NSStringFromClass([request class]),key]);
+            KLog([NSString stringWithFormat:@"catalog %@ -> %@ count=%lu attached=%d",NSStringFromClass([request class]),key,(unsigned long)[result[key] count],KGet(response,@"results")!=nil]);
             KFinish(completion,response,nil);
         } @catch (NSException *exception) {
             KLog([@"model adapter exception " stringByAppendingString:exception.name]);
@@ -246,41 +278,88 @@ static BOOL KReplace(Class cls,NSString *name,id block,NSUInteger args,const cha
     [installedHooks addObject:key]; KLog([@"installed " stringByAppendingString:key]); return YES;
 }
 
-static void KCommand(id request,id completion) {
-    completion=[completion copy];
+static id KCommandStatus(id request,NSError *error) {
+    Class cls=NSClassFromString(@"MPRemoteCommandStatus");
+    id status=nil;
+    if (error) {
+        SEL selector=NSSelectorFromString(@"statusWithCode:error:");
+        if ([cls respondsToSelector:selector]) status=((id(*)(id,SEL,NSInteger,id))objc_msgSend)(cls,selector,200,error);
+    } else status=KCall0(cls,@"successStatus");
+    return KCall2([NSClassFromString(@"MPCPlayerCommandStatus") alloc],@"initWithMPStatus:request:",status,request);
+}
+
+static void KRunCommand(id request,void(^completion)(id,NSError *)) {
+    NSNumber *command=KGet(request,@"command");
+    NSDictionary *options=KGet(request,@"options") ?: @{};
     NSString *label=[KGet(request,@"label") description].lowercaseString ?: @"";
     NSString *action=nil;
+    // The command's numeric type is stable even when the UI label is localized.
+    if (command) switch (command.unsignedIntValue) {
+        case 0: action=@"play"; break;
+        case 1: action=@"pause"; break;
+        case 2: action=@"toggle"; break;
+        case 3: action=@"stop"; break;
+        case 4: action=@"next"; break;
+        case 5: action=@"previous"; break;
+        case 24: action=@"seek"; break;
+        case 122: case 125: action=@"play"; break;
+    }
+    if (!action) {
     if ([label containsString:@"toggle"]) action=@"toggle";
     else if ([label containsString:@"previous"] || [label containsString:@"backward"]) action=@"previous";
     else if ([label containsString:@"next"]) action=@"next";
     else if ([label containsString:@"pause"]) action=@"pause";
     else if ([label containsString:@"stop"]) action=@"stop";
     else if ([label containsString:@"play"] || [label containsString:@"queue"]) action=@"play";
-    if (!action) { KLog([@"unmapped command " stringByAppendingString:NSStringFromClass([request class])]); KFinish(completion,nil,KError(@"Unmapped original player command")); return; }
-    NSString *identifier=KIdentifier(request,0);
-    KExecute(action,identifier ? @{@"id":identifier} : @{},^(NSDictionary *result,NSError *error){
-        KLog([@"player " stringByAppendingString:action]);
-        id status=nil;
-        @try { status=[NSClassFromString(@"MPCPlayerCommandStatus") new]; KSet(status,@"error",error); }
-        @catch (NSException *exception) { error=KError(@"Player command status ABI is unavailable"); }
-        KFinish(completion,status,error);
+    }
+    if (!action) {
+        NSError *error=KError([NSString stringWithFormat:@"Команда воспроизведения %@ пока не поддерживается.",command ?: @"?"]);
+        KLog([@"unmapped command " stringByAppendingString:NSStringFromClass([request class])]);
+        completion(KCommandStatus(request,error),error); return;
+    }
+    id context=options[@"MPCPlayerCommandRequestMediaRemoteOptionPlaybackContext"];
+    NSString *identifier=KIdentifier(KGet(context,@"startItemIdentifiers"),0) ?: KIdentifier(request,0);
+    NSMutableDictionary *payload=[NSMutableDictionary new];
+    if (identifier) payload[@"id"]=identifier;
+    NSMutableArray *queue=[NSMutableArray new];
+    for (id value in KGet(KGet(context,@"request"),@"allowedItemIdentifiers")) {
+        NSString *itemID=KIdentifier(value,0); if (itemID) [queue addObject:itemID];
+    }
+    if (queue.count) payload[@"queue"]=queue;
+    for (NSString *key in options) {
+        if ([key.lowercaseString containsString:@"playbackposition"] && [options[key] isKindOfClass:NSNumber.class]) payload[@"time"]=options[key];
+    }
+    KExecute(action,payload,^(NSDictionary *result,NSError *error){
+        KLog([NSString stringWithFormat:@"player %@ command=%@ success=%d",action,command,error==nil]);
+        completion(KCommandStatus(request,error),error);
+    });
+}
+
+static void KRunCommands(NSArray *commands,NSUInteger index,NSMutableArray *statuses,void(^completion)(NSArray *,NSError *),NSError *firstError) {
+    if (index==commands.count) { completion(statuses,firstError); return; }
+    KRunCommand(commands[index],^(id status,NSError *error){
+        if (status) [statuses addObject:status];
+        KRunCommands(commands,index+1,statuses,completion,firstError ?: error);
     });
 }
 
 static void KInstallModels(void) {
     for (NSString *name in @[@"MPModelRequest",@"MPModelLibraryRequest",@"MPModelLibrarySearchRequest",@"MPModelStoreSearchRequest",@"MPModelStoreBrowseRequest"]) {
         KReplace(NSClassFromString(name),@"performWithResponseHandler:",^(id request,id completion){KModelRequest(request,completion);},3,"v");
+        KReplace(NSClassFromString(name),@"responseWithCompletion:",^(id request,id completion){KModelRequest(request,completion);},3,"v");
     }
-    Class commandClass=NSClassFromString(@"MPCPlayerCommandRequest");
-    KReplace(commandClass,@"performWithCompletion:",^id(id request,id completion){KCommand(request,completion);return request;},3,"@");
-    KReplace(commandClass,@"performWithCompletion:",^(id request,id completion){KCommand(request,completion);},3,"v");
-    unsigned count=0; Method *methods=class_copyMethodList(commandClass,&count);
-    for (unsigned i=0;i<count;i++) {
-        NSString *name=NSStringFromSelector(method_getName(methods[i]));
-        if ([name containsString:@"perform"] || [name containsString:@"execute"]) KLog([@"command method " stringByAppendingString:name]);
-    }
-    free(methods);
+    Class changeClass=NSClassFromString(@"MPCPlayerChangeRequest");
+    KReplace(changeClass,@"performWithCompletion:",^(id request,id completion){
+        void(^handler)(NSError *)=[completion copy];
+        KRunCommands(KGet(request,@"commands") ?: @[],0,[NSMutableArray new],^(NSArray *statuses,NSError *error){ if (handler) handler(error); },nil);
+    },3,"v");
+    KReplace(changeClass,@"performWithExtendedStatusCompletion:",^(id request,id completion){
+        void(^handler)(NSArray *)=[completion copy];
+        KRunCommands(KGet(request,@"commands") ?: @[],0,[NSMutableArray new],^(NSArray *statuses,NSError *error){ if (handler) handler(statuses); },nil);
+    },3,"v");
 }
+
+__attribute__((visibility("default"))) void KreshkaInstallAdapters(void) { KInstallModels(); }
 
 static BOOL KAppleHost(NSString *host) {
     host=host.lowercaseString;
@@ -298,6 +377,7 @@ static NSDictionary *KAppleItem(NSString *type,NSDictionary *value) {
     if (artwork) attributes[@"artwork"]=@{@"url":artwork,@"width":@1000,@"height":@1000};
     NSString *identifier=[value[@"id"] description] ?: @"";
     attributes[@"playParams"]=@{@"id":[@"kr:" stringByAppendingString:identifier],@"kind":@"song"};
+    if (value[@"isExplicit"]) attributes[@"contentRating"]=[value[@"isExplicit"] boolValue] ? @"explicit" : @"clean";
     return @{@"id":identifier,@"type":type,@"attributes":attributes};
 }
 @interface KreshkaAppleProtocol : NSURLProtocol
@@ -318,7 +398,14 @@ static NSDictionary *KAppleItem(NSString *type,NSDictionary *value) {
     }
     NSString *query=@""; for (NSURLQueryItem *item in url.queryItems) if ([item.name isEqualToString:@"term"]) query=item.value ?: @"";
     NSString *kind=[url.path containsString:@"/albums"] ? @"album" : [url.path containsString:@"/artists"] ? @"artist" : [url.path containsString:@"/playlists"] ? @"playlist" : @"song";
-    KExecute(home ? @"home" : @"catalog",@{@"kind":kind,@"query":query},^(NSDictionary *result,NSError *error){
+    NSArray *components=[url.path componentsSeparatedByString:@"/"];
+    NSString *identifier=@"";
+    NSString *plural=@{@"album":@"albums",@"artist":@"artists",@"playlist":@"playlists",@"song":@"songs"}[kind];
+    NSUInteger position=[components indexOfObject:plural];
+    if (position!=NSNotFound && position+1<components.count) identifier=components[position+1];
+    if ([identifier hasPrefix:@"kr:"]) identifier=[identifier substringFromIndex:3];
+    BOOL trackRelationship=[url.path hasSuffix:@"/tracks"] || [url.path hasSuffix:@"/songs"];
+    KExecute(home ? @"home" : @"catalog",@{@"kind":kind,@"containerKind":kind,@"query":query,@"id":identifier},^(NSDictionary *result,NSError *error){
         if (self.stopped) return;
         if (error) { [self.client URLProtocol:self didFailWithError:error]; return; }
         NSMutableDictionary *groups=[NSMutableDictionary dictionary];
@@ -328,7 +415,7 @@ static NSDictionary *KAppleItem(NSString *type,NSDictionary *value) {
             for (NSDictionary *value in result[keys[type]] ?: @[]) [items addObject:KAppleItem(type,value)];
             groups[type]=@{@"data":items};
         }
-        NSString *type=@{@"song":@"songs",@"album":@"albums",@"artist":@"artists",@"playlist":@"playlists"}[kind];
+        NSString *type=trackRelationship ? @"songs" : plural;
         NSDictionary *envelope=search ? @{@"results":groups} : groups[type];
         NSData *data=[NSJSONSerialization dataWithJSONObject:envelope options:0 error:&error];
         if (!data) { [self.client URLProtocol:self didFailWithError:error]; return; }
@@ -340,11 +427,32 @@ static NSDictionary *KAppleItem(NSString *type,NSDictionary *value) {
 }
 @end
 
+// Only the original application's Apple-service onboarding/settings are
+// redirected. OAuth, document pickers and our own sheets remain ordinary UI.
+static NSInteger KPresentationRoute(UIViewController *controller) {
+    NSString *name=NSStringFromClass(controller.class);
+    if ([name containsString:@"MusicApplication"] || [name hasPrefix:@"_TtC16MusicApplication"]) {
+        if ([name containsString:@"JSWhatsNewViewController"] || [name containsString:@"WelcomeViewController"]) return 1;
+        if ([name containsString:@"JSSettingsViewController"]) return 2;
+    }
+    for (UIViewController *child in controller.childViewControllers) {
+        NSInteger route=KPresentationRoute(child); if (route) return route;
+    }
+    return 0;
+}
+
+static BOOL KAppleMusicURL(NSURL *url) {
+    NSString *scheme=url.scheme.lowercaseString;
+    return [@[@"music",@"musics",@"itms-music",@"itmss",@"itms"] containsObject:scheme]
+        || [url.host.lowercaseString isEqualToString:@"music.apple.com"];
+}
+
 @interface KreshkaBridgeInstaller : NSObject
 @end
 @implementation KreshkaBridgeInstaller
 + (void)load {
     installedHooks=[NSMutableSet new];
+    libraryIdentifiers=[NSMutableDictionary new];
     // Authorization here refers to the bridge's catalogue. No request for the
     // user's Apple Music/media-library data is needed by our providers.
     Class mediaLibraryMeta=object_getClass(NSClassFromString(@"MPMediaLibrary"));
@@ -377,13 +485,49 @@ static NSDictionary *KAppleItem(NSString *type,NSDictionary *value) {
     [NSNotificationCenter.defaultCenter addObserverForName:@"KreshkaCatalogChanged" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification){
         [NSNotificationCenter.defaultCenter postNotificationName:@"MPMediaLibraryDidChangeNotification" object:nil];
     }];
+    Method present=class_getInstanceMethod(UIViewController.class,@selector(presentViewController:animated:completion:));
+    IMP originalPresent=method_getImplementation(present);
+    KReplace(UIViewController.class,@"presentViewController:animated:completion:",^(UIViewController *presenter,UIViewController *controller,BOOL animated,void(^completion)(void)){
+        NSInteger route=KPresentationRoute(controller);
+        if (route) {
+            KLog(route==1 ? @"suppressed Apple onboarding presentation" : @"redirected Apple settings to Maple settings");
+            dispatch_async(dispatch_get_main_queue(),^{
+                if (completion) completion();
+                if (route==2) KSend0(KBackend(),@"presentSettings");
+            });
+            return;
+        }
+        ((void(*)(id,SEL,id,BOOL,id))originalPresent)(presenter,@selector(presentViewController:animated:completion:),controller,animated,completion);
+    },5,"v");
+    Method open=class_getInstanceMethod(UIApplication.class,@selector(openURL:options:completionHandler:));
+    IMP originalOpen=method_getImplementation(open);
+    KReplace(UIApplication.class,@"openURL:options:completionHandler:",^(UIApplication *app,NSURL *url,NSDictionary *options,void(^completion)(BOOL)){
+        if (KAppleMusicURL(url)) {
+            KLog(@"blocked external Apple Music launch");
+            if (completion) dispatch_async(dispatch_get_main_queue(),^{completion(NO);});
+            return;
+        }
+        ((void(*)(id,SEL,id,id,id))originalOpen)(app,@selector(openURL:options:completionHandler:),url,options,completion);
+    },5,"v");
     Method appear=class_getInstanceMethod(UIViewController.class,@selector(viewDidAppear:));
     IMP original=method_getImplementation(appear);
     KReplace(UIViewController.class,@"viewDidAppear:",^(UIViewController *controller,BOOL animated){
         ((void(*)(id,SEL,BOOL))original)(controller,@selector(viewDidAppear:),animated);
+        if (KPresentationRoute(controller)==1) {
+            UIViewController *host=controller;
+            while (host.parentViewController && !host.presentingViewController) host=host.parentViewController;
+            if (host.presentingViewController) {
+                KLog(@"dismissed embedded Apple onboarding");
+                [host dismissViewControllerAnimated:NO completion:nil];
+            }
+            return;
+        }
+        KInstallModels();
         NSString *name=NSStringFromClass(controller.class);
         if (([name containsString:@"MusicApplication"] || [name hasPrefix:@"Music"]) && controller.navigationController.topViewController==controller) {
-            controller.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"person.crop.circle"] style:UIBarButtonItemStylePlain target:KBackend() action:NSSelectorFromString(@"presentAccount")];
+            UIBarButtonItem *settings=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape"] style:UIBarButtonItemStylePlain target:KBackend() action:NSSelectorFromString(@"presentSettings")];
+            settings.accessibilityLabel=@"Настройки";
+            controller.navigationItem.rightBarButtonItem=settings;
         }
     },3,"v");
     KLog(@"runtime adapter loaded");

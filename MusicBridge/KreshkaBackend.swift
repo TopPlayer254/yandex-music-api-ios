@@ -7,21 +7,30 @@ import UIKit
 /// The service, credentials, downloads and player are the existing Maple code.
 @MainActor
 @objc(KreshkaBackend)
-final class KreshkaBackend: NSObject {
+final class KreshkaBackend: NSObject, ObservableObject {
     private static let instance = KreshkaBackend()
-    private let settings = ProviderSettings()
-    private let appearance = AppearanceSettings()
-    private let developer = DeveloperSettings()
-    private var container: AppContainer!
+    fileprivate let settings = ProviderSettings()
+    fileprivate let appearance = AppearanceSettings()
+    fileprivate let developer = DeveloperSettings()
+    @Published fileprivate var container: AppContainer!
     private var observations = Set<AnyCancellable>()
     private var containerObservations = Set<AnyCancellable>()
     private var tracks: [String: Track] = [:]
     private var bootstrapTask: Task<Void, Never>?
+    private weak var settingsController: UIViewController?
 
     @objc static func sharedInstance() -> KreshkaBackend { instance }
 
     override private init() {
         super.init()
+        // Fixture selection is restricted to the separate simulator test host.
+        // The packaged Music application always uses its user's saved provider.
+        if Bundle.main.bundleIdentifier?.hasSuffix(".smoke") == true,
+           ProcessInfo.processInfo.environment["KRESHKA_SMOKE_CATALOG"] == "1" {
+            var fixture = ProviderConfiguration()
+            fixture.kind = .demo
+            try? settings.apply(fixture)
+        }
         rebuild()
         settings.$generation.dropFirst().sink { [weak self] _ in
             Task { @MainActor in self?.rebuild() }
@@ -32,6 +41,7 @@ final class KreshkaBackend: NSObject {
         bootstrapTask?.cancel()
         container?.player.stop()
         containerObservations.removeAll()
+        tracks.removeAll()
         container = AppContainer(configuration: settings.configuration)
         let current = container!
         current.player.$currentTrack.combineLatest(current.player.$isPlaying)
@@ -44,6 +54,12 @@ final class KreshkaBackend: NSObject {
             guard let self, self.container === current else { return }
             NotificationCenter.default.post(name: .init("KreshkaCatalogChanged"), object: self)
         }.store(in: &containerObservations)
+        current.catalog.$library.compactMap { $0 }.removeDuplicates()
+            .receive(on: DispatchQueue.main).sink { [weak self] library in
+                guard let self, self.container === current else { return }
+                self.remember(library.liked + library.recentlyAdded + library.playlists.flatMap(\.tracks))
+                NotificationCenter.default.post(name: .init("KreshkaCatalogChanged"), object: self)
+            }.store(in: &containerObservations)
         bootstrapTask = Task { [weak self] in
             await current.bootstrap()
             guard !Task.isCancelled, let self, self.container === current else { return }
@@ -95,7 +111,11 @@ final class KreshkaBackend: NSObject {
 
     private func perform(_ action: String, payload: NSDictionary) async throws -> [String: Any] {
         if action == "account" { presentAccount(); return ["presented": true] }
+        if action == "settings" { presentSettings(); return ["presented": true] }
         if action == "state" { return (snapshot as? [String: Any]) ?? [:] }
+        // Native screens request the library during launch, before Keychain
+        // restoration has completed. Do not cache an unauthorized response then.
+        await bootstrapTask?.value
         guard signedIn else { throw MusicServiceError.unauthorized }
         let service = container.service
         switch action {
@@ -103,27 +123,31 @@ final class KreshkaBackend: NSObject {
             let query = (payload["query"] as? String) ?? ""
             let identifier = (payload["id"] as? String) ?? ""
             let kind = (payload["kind"] as? String) ?? "song"
+            let containerKind = (payload["containerKind"] as? String) ?? kind
             if !query.isEmpty {
                 let results = try await service.search(query: query)
                 remember(results.tracks)
                 return (encode(results) as? [String: Any]) ?? [:]
             }
-            if kind == "playlist", !identifier.isEmpty {
+            if containerKind == "playlist", !identifier.isEmpty {
                 let playlist = try await service.playlist(id: identifier)
                 remember(playlist.tracks)
                 return ["tracks": encode(playlist.tracks) ?? [], "playlists": encode([playlist]) ?? []]
             }
-            if kind == "album", !identifier.isEmpty {
+            if containerKind == "album", !identifier.isEmpty {
                 let album = try await service.album(id: identifier)
                 remember(album.tracks)
                 return ["tracks": encode(album.tracks) ?? [], "albums": encode([album]) ?? []]
             }
-            if kind == "artist", !identifier.isEmpty {
+            if containerKind == "artist", !identifier.isEmpty {
                 let artist = try await service.artist(id: identifier)
                 remember(artist.tracks)
                 return ["tracks": encode(artist.tracks) ?? [], "albums": encode(artist.albums) ?? []]
             }
-            let library = try await service.library()
+            if container.catalog.library == nil { await container.catalog.refreshLibrary() }
+            guard let library = container.catalog.library else {
+                throw MusicServiceError.message(container.catalog.libraryErrorMessage ?? "Не удалось загрузить медиатеку.")
+            }
             remember(library.liked + library.recentlyAdded + library.playlists.flatMap(\.tracks))
             let liked = library.liked
             let albums = Dictionary(grouping: liked, by: { $0.albumID ?? $0.albumTitle }).map { key, values in
@@ -133,10 +157,15 @@ final class KreshkaBackend: NSObject {
             }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
             let artists = Dictionary(grouping: liked, by: { $0.artist.id }).compactMap { $0.value.first?.artist }
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-            return ["tracks": encode(liked) ?? [], "albums": encode(albums) ?? [],
+            let identifiers = payload["ids"] as? [String] ?? []
+            let selected = identifiers.isEmpty ? liked : identifiers.compactMap { tracks[$0] }
+            return ["tracks": encode(selected) ?? [], "albums": encode(albums) ?? [],
                     "artists": encode(artists) ?? [], "playlists": encode(library.playlists) ?? []]
         case "home":
-            let home = try await service.home()
+            if container.catalog.home == nil { await container.catalog.refreshHome() }
+            guard let home = container.catalog.home else {
+                throw MusicServiceError.message(container.catalog.homeErrorMessage ?? "Не удалось загрузить главную.")
+            }
             remember(home.featured + home.shelves.flatMap(\.tracks))
             return ["tracks": encode(home.featured + home.shelves.flatMap(\.tracks)) ?? []]
         case "play":
@@ -148,7 +177,11 @@ final class KreshkaBackend: NSObject {
                 if let error = container.player.errorMessage { throw MusicServiceError.message(error) }
             } else if identifier != nil {
                 throw MusicServiceError.message("Трек отсутствует в загруженном каталоге.")
-            } else if !container.player.isPlaying { container.player.togglePlayback() }
+            } else if container.player.currentTrack != nil {
+                container.player.resume()
+            } else {
+                throw MusicServiceError.message("Сначала выберите трек из медиатеки Яндекса.")
+            }
         case "pause": container.player.pause()
         case "toggle": container.player.togglePlayback()
         case "stop": container.player.stop()
@@ -169,17 +202,16 @@ final class KreshkaBackend: NSObject {
     }
 
     @objc func presentAccount() {
+        presentSettings()
+        settings.opensAccount = true
+    }
+
+    @objc func presentSettings() {
+        if let settingsController,
+           settingsController.presentingViewController != nil || settingsController.isBeingPresented { return }
         guard let presenter = Self.presenter() else { return }
-        let controller = UIHostingController(rootView:
-            NavigationStack { AccountSettingsView() }
-                .environmentObject(container).environmentObject(container.auth)
-                .environmentObject(container.player).environmentObject(container.catalog)
-                .environmentObject(container.downloads).environmentObject(settings)
-                .environmentObject(appearance).environmentObject(developer)
-                .environmentObject(container.lyricsSettings)
-                .environmentObject(container.downloadPreferences)
-                .environmentObject(container.waveSettings)
-        )
+        let controller = UIHostingController(rootView: BridgeSettingsRoot(backend: self))
+        settingsController = controller
         controller.modalPresentationStyle = .pageSheet
         presenter.present(controller, animated: true)
     }
@@ -189,5 +221,39 @@ final class KreshkaBackend: NSObject {
             .flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController
         while let presented = root?.presentedViewController { root = presented }
         return root
+    }
+}
+
+@MainActor
+private struct BridgeSettingsRoot: View {
+    @ObservedObject var backend: KreshkaBackend
+    @ObservedObject private var settings: ProviderSettings
+    @ObservedObject private var appearance: AppearanceSettings
+
+    init(backend: KreshkaBackend) {
+        self.backend = backend
+        settings = backend.settings
+        appearance = backend.appearance
+    }
+
+    var body: some View {
+        AccountView()
+            .sheet(isPresented: $settings.opensAccount) {
+                NavigationStack { AccountSettingsView() }
+            }
+            .environmentObject(backend.container)
+            .environmentObject(backend.container.auth)
+            .environmentObject(backend.container.player)
+            .environmentObject(backend.container.catalog)
+            .environmentObject(backend.container.downloads)
+            .environmentObject(backend.settings)
+            .environmentObject(backend.appearance)
+            .environmentObject(backend.developer)
+            .environmentObject(backend.container.lyricsSettings)
+            .environmentObject(backend.container.downloadPreferences)
+            .environmentObject(backend.container.waveSettings)
+            .id(ObjectIdentifier(backend.container))
+            .tint(backend.appearance.tint)
+            .preferredColorScheme(backend.appearance.interfaceStyle.colorScheme)
     }
 }
