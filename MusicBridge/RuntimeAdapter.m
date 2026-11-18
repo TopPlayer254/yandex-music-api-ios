@@ -151,6 +151,7 @@ static id KIdentifiers(NSString *identifier) {
 }
 - (id)existingRepresentationForArtworkCatalog:(id)catalog { return [self representation:[self.images objectForKey:KGet(catalog,@"token") ?: @""]]; }
 - (void)loadRepresentationForArtworkCatalog:(id)catalog completionHandler:(id)completion {
+    completion=[completion copy];
     NSString *key=KGet(catalog,@"token"); NSURL *url=[NSURL URLWithString:key ?: @""];
     if (!url || ![url.scheme isEqualToString:@"https"]) { KFinish(completion,nil,KError(@"Invalid artwork URL")); return; }
     UIImage *cached=[self.images objectForKey:key];
@@ -201,6 +202,9 @@ static NSString *KRequestKind(id request) {
     return @"song";
 }
 static void KModelRequest(id request,id completion) {
+    // The caller may pass a stack block. Retaining it as id does not give ARC
+    // the block-typed ownership needed to move its captures to the heap.
+    completion=[completion copy];
     NSString *kind=KRequestKind(request);
     NSString *query=KGet(request,@"searchString") ?: KGet(request,@"searchTerm") ?: @"";
     NSString *identifier=KIdentifier(KGet(request,@"sectionIdentifiers"),0);
@@ -243,6 +247,7 @@ static BOOL KReplace(Class cls,NSString *name,id block,NSUInteger args,const cha
 }
 
 static void KCommand(id request,id completion) {
+    completion=[completion copy];
     NSString *label=[KGet(request,@"label") description].lowercaseString ?: @"";
     NSString *action=nil;
     if ([label containsString:@"toggle"]) action=@"toggle";
@@ -340,6 +345,14 @@ static NSDictionary *KAppleItem(NSString *type,NSDictionary *value) {
 @implementation KreshkaBridgeInstaller
 + (void)load {
     installedHooks=[NSMutableSet new];
+    // Authorization here refers to the bridge's catalogue. No request for the
+    // user's Apple Music/media-library data is needed by our providers.
+    Class mediaLibraryMeta=object_getClass(NSClassFromString(@"MPMediaLibrary"));
+    KReplace(mediaLibraryMeta,@"authorizationStatus",^NSInteger(id cls){ return 3; },2,"q");
+    KReplace(mediaLibraryMeta,@"requestAuthorization:",^(id cls,id completion){
+        void(^handler)(NSInteger)=(void(^)(NSInteger))[completion copy];
+        dispatch_async(dispatch_get_main_queue(),^{ if (handler) handler(3); });
+    },3,"v");
     [NSURLProtocol registerClass:KreshkaAppleProtocol.class];
     Class meta=object_getClass(NSURLSessionConfiguration.class);
     for (NSString *name in @[@"defaultSessionConfiguration",@"ephemeralSessionConfiguration"]) {

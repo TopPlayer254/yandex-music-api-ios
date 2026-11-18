@@ -31,6 +31,20 @@ def validate_architecture(executable:bytes, framework:bytes):
         raise ValueError('The original arm64e process requires a real arm64e bridge, not arm64')
 
 
+def brand_localized_info(app:Path):
+    path=app/'InfoPlist.loctable'
+    if not path.exists(): return
+    table=plistlib.loads(path.read_bytes())
+    for values in table.values():
+        if not isinstance(values,dict): continue
+        if not any(key in values for key in ('CFBundleName','CFBundleDisplayName')): continue
+        values['CFBundleName']='Крешка'
+        values['CFBundleDisplayName']='Крешка'
+        values['kMDItemAlternateNames']='Крешка'
+        if 'ALT_APP_NAME_1' in values: values['ALT_APP_NAME_1']='Крешка'
+    path.write_bytes(plistlib.dumps(table,fmt=plistlib.FMT_BINARY))
+
+
 def patch_macho(data:bytes, inject:str|None=None) -> bytes:
     if data[:4]!=b'\xcf\xfa\xed\xfe':
         raise ValueError('Only thin little-endian 64-bit Mach-O is supported')
@@ -103,9 +117,10 @@ def package(original:Path, framework:Path, output:Path, simulator=False):
         info=plistlib.loads((app/'Info.plist').read_bytes())
         info['CFBundleIdentifier']=BUNDLE_ID
         info['CFBundleDisplayName']='Крешка'
+        info['CFBundleName']='Крешка'
         info['UIFileSharingEnabled']=True
         info['LSSupportsOpeningDocumentsInPlace']=True
-        info['NSAppleMusicUsageDescription']='Доступ к музыкальному интерфейсу приложения.'
+        info['NSAppleMusicUsageDescription']='Доступ к локальной медиатеке устройства.'
         info['KreshkaBridgeVersion']='0.1.0-experimental'
         info['CFBundleURLTypes']=[{'CFBundleURLName':BUNDLE_ID+'.oauth','CFBundleURLSchemes':['maplemusic','kreshkamusic']}]
         info['YandexClientID']=__import__('os').environ.get('YANDEX_CLIENT_ID','')
@@ -117,6 +132,7 @@ def package(original:Path, framework:Path, output:Path, simulator=False):
                     'UNUserNotificationCenter','NSRegulatoryPrivacyDisclosure']:
             info.pop(key,None)
         (app/'Info.plist').write_bytes(plistlib.dumps(info,fmt=plistlib.FMT_BINARY))
+        brand_localized_info(app)
         stripped=[]
         original_loads=[name for _,_,_,name in dylib_loads((app/source_executable).read_bytes())]
         for path in sorted(app.rglob('*')):
