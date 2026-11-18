@@ -5,10 +5,12 @@
 #import <objc/runtime.h>
 #import <dlfcn.h>
 #include <string.h>
+#include <unistd.h>
 
 static char KreshkaIdentifierKey;
 static NSMutableDictionary<NSNumber *,NSString *> *libraryIdentifiers;
 static void KInstallModels(void);
+static void KLog(NSString *event);
 // These are the only direct CoreAnalytics symbols imported by the pinned
 // original binary. Its CoreAnalytics load is redirected to this framework.
 __attribute__((visibility("default")))
@@ -45,7 +47,8 @@ static void KSet(id object,NSString *key,id value) {
     if (!object || !value || !key.length) return;
     NSString *setter=[NSString stringWithFormat:@"set%@%@:",[[key substringToIndex:1] uppercaseString],[key substringFromIndex:1]];
     if (![object respondsToSelector:NSSelectorFromString(setter)]) return;
-    @try { [object setValue:value forKey:key]; } @catch (NSException *exception) { }
+    @try { [object setValue:value forKey:key]; }
+    @catch (NSException *exception) { KLog([NSString stringWithFormat:@"model property %@.%@ failed %@",NSStringFromClass([object class]),key,exception.name]); }
 }
 static void KLog(NSString *event) {
     NSLog(@"KRESHKA %@",event);
@@ -128,23 +131,29 @@ static NSString *KIdentifier(id object,NSUInteger depth) {
 }
 
 static id KModel(NSString *kind,NSDictionary *value);
-static id KIdentifiers(NSString *identifier) {
+static id KIdentifiers(NSString *identifier,Class modelClass) {
     Class cls=NSClassFromString(@"MPIdentifierSet");
     id allocated=[cls alloc];
     uint64_t persistentID=14695981039346656037ULL;
-    NSData *bytes=[identifier dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *bytes=[[NSString stringWithFormat:@"%@:%@",NSStringFromClass(modelClass),identifier] dataUsingEncoding:NSUTF8StringEncoding];
     for (NSUInteger i=0;i<bytes.length;i++) { persistentID^=((const uint8_t *)bytes.bytes)[i]; persistentID*=1099511628211ULL; }
     persistentID=(persistentID & INT64_MAX) ?: 1;
     libraryIdentifiers[@(persistentID)]=identifier;
     void(^populate)(id)=^(id mutable){
         KSet(mutable,@"contentItemID",[@"kr:" stringByAppendingString:identifier]);
         KSet(mutable,@"vendorID",[@"kr:" stringByAppendingString:identifier]);
-        KSet(mutable,@"deviceLibraryPersistentID",@(persistentID));
+        if ([mutable respondsToSelector:NSSelectorFromString(@"setLibraryIdentifiersWithDatabaseID:block:")]) {
+            void(^library)(id)=^(id local){ KSet(local,@"persistentID",@(persistentID)); };
+            // KVC boxes primitive setters; the two-object method takes a real
+            // database namespace so MusicKit recognizes local-library identity.
+            ((void(*)(id,SEL,id,id))objc_msgSend)(mutable,NSSelectorFromString(@"setLibraryIdentifiersWithDatabaseID:block:"),@"dev.hikeri.kreshka.music",library);
+        } else KSet(mutable,@"deviceLibraryPersistentID",@(persistentID));
     };
     id result=nil;
     SEL modern=NSSelectorFromString(@"initWithSource:modelKind:block:");
     if ([allocated respondsToSelector:modern]) {
-        result=((id(*)(id,SEL,id,id,id))objc_msgSend)(allocated,modern,@"Kreshka",nil,populate);
+        id modelKind=KCall1(NSClassFromString(@"MPModelKind"),@"kindWithModelClass:",modelClass);
+        result=((id(*)(id,SEL,id,id,id))objc_msgSend)(allocated,modern,@"Kreshka",modelKind,populate);
     } else if ([allocated respondsToSelector:NSSelectorFromString(@"initWithBlock:")]) {
         result=KCall1(allocated,@"initWithBlock:",populate);
     } else { result=KCall0(allocated,@"init"); populate(result); }
@@ -196,7 +205,11 @@ static id KModel(NSString *kind,NSDictionary *value) {
         KSet(model,@"libraryAdded",@YES);
         if ([kind isEqualToString:@"song"]) {
             KSet(model,@"artist",KModel(@"artist",value[@"artist"]));
-            KSet(model,@"album",KModel(@"album",@{@"id":value[@"albumID"] ?: @"",@"title":value[@"albumTitle"] ?: @"",@"artwork":value[@"artwork"] ?: @{}}));
+            KSet(model,@"album",KModel(@"album",@{@"id":value[@"albumID"] ?: @"",@"title":value[@"albumTitle"] ?: @"",@"artwork":value[@"artwork"] ?: @{},@"artists":value[@"artist"] ? @[value[@"artist"]] : @[]}));
+        }
+        if ([kind isEqualToString:@"album"]) {
+            KSet(model,@"artist",KModel(@"artist",[value[@"artists"] firstObject]));
+            KSet(model,@"trackCount",value[@"trackCount"]);
         }
         NSString *artwork=[value[@"artwork"] isKindOfClass:NSDictionary.class] ? value[@"artwork"][@"url"] : nil;
         if (artwork.length) {
@@ -207,7 +220,7 @@ static id KModel(NSString *kind,NSDictionary *value) {
         }
     };
     id allocated=[cls alloc]; id model=nil;
-    if ([allocated respondsToSelector:NSSelectorFromString(@"initWithIdentifiers:block:")]) model=KCall2(allocated,@"initWithIdentifiers:block:",KIdentifiers(identifier),populate);
+    if ([allocated respondsToSelector:NSSelectorFromString(@"initWithIdentifiers:block:")]) model=KCall2(allocated,@"initWithIdentifiers:block:",KIdentifiers(identifier,cls),populate);
     else { model=KCall0(allocated,@"init"); populate(model); }
     if (model) objc_setAssociatedObject(model,&KreshkaIdentifierKey,identifier,OBJC_ASSOCIATION_COPY_NONATOMIC);
     return model;
@@ -348,6 +361,22 @@ static void KInstallModels(void) {
         KReplace(NSClassFromString(name),@"performWithResponseHandler:",^(id request,id completion){KModelRequest(request,completion);},3,"v");
         KReplace(NSClassFromString(name),@"responseWithCompletion:",^(id request,id completion){KModelRequest(request,completion);},3,"v");
     }
+    // Native transport responses must observe this app's Now Playing session,
+    // rather than the separate, installed com.apple.Music process.
+    Class pathClass=NSClassFromString(@"MPCPlayerPath");
+    KReplace(object_getClass(pathClass),@"systemMusicPathWithRoute:playerID:",^id(id cls,id route,id playerID){
+        SEL selector=NSSelectorFromString(@"pathWithRoute:bundleID:playerID:");
+        return ((id(*)(id,SEL,id,id,id))objc_msgSend)(cls,selector,route,NSBundle.mainBundle.bundleIdentifier,playerID);
+    },4,"@");
+    NSString *initializer=@"initWithDeviceUID:bundleID:pid:playerID:";
+    Method pathInit=class_getInstanceMethod(pathClass,NSSelectorFromString(initializer));
+    if (pathInit) {
+        IMP originalPathInit=method_getImplementation(pathInit);
+        KReplace(pathClass,initializer,^id(id path,id device,id bundleID,int pid,id playerID){
+            if ([bundleID isEqualToString:@"com.apple.Music"]) { bundleID=NSBundle.mainBundle.bundleIdentifier; pid=getpid(); }
+            return ((id(*)(id,SEL,id,id,int,id))originalPathInit)(path,NSSelectorFromString(initializer),device,bundleID,pid,playerID);
+        },6,"@");
+    }
     Class changeClass=NSClassFromString(@"MPCPlayerChangeRequest");
     KReplace(changeClass,@"performWithCompletion:",^(id request,id completion){
         void(^handler)(NSError *)=[completion copy];
@@ -357,6 +386,17 @@ static void KInstallModels(void) {
         void(^handler)(NSArray *)=[completion copy];
         KRunCommands(KGet(request,@"commands") ?: @[],0,[NSMutableArray new],^(NSArray *statuses,NSError *error){ if (handler) handler(statuses); },nil);
     },3,"v");
+    for (NSString *name in @[@"MPMusicPlayerController",@"MPSystemMusicPlayerController",@"MPApplicationMusicPlayerController"]) {
+        NSDictionary *actions=@{@"play":@"play",@"pause":@"pause",@"stop":@"stop",@"skipToNextItem":@"next",@"skipToPreviousItem":@"previous"};
+        for (NSString *selector in actions) {
+            NSString *action=actions[selector];
+            KReplace(NSClassFromString(name),selector,^(id controller){
+                KExecute(action,@{},^(NSDictionary *state,NSError *error){
+                    KLog([NSString stringWithFormat:@"public player %@ success=%d",action,error==nil]);
+                });
+            },2,"v");
+        }
+    }
 }
 
 __attribute__((visibility("default"))) void KreshkaInstallAdapters(void) { KInstallModels(); }

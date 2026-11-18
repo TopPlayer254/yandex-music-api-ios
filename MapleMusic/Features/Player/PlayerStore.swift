@@ -856,7 +856,8 @@ final class PlayerStore: ObservableObject {
             MPNowPlayingInfoPropertyPlaybackRate: systemPlaybackRate,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
-            MPNowPlayingInfoPropertyExternalContentIdentifier: track.id,
+            MPNowPlayingInfoPropertyExternalContentIdentifier:
+                Bundle.main.bundleIdentifier?.hasPrefix("dev.hikeri.kreshka.music") == true ? "kr:" + track.id : track.id,
         ]
         if let nowPlayingArtwork {
             info[MPMediaItemPropertyArtwork] = nowPlayingArtwork

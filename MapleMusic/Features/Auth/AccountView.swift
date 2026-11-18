@@ -153,6 +153,10 @@ private struct DeveloperSettingsView: View {
                 Toggle("Show literal crash response", isOn: $developerSettings.showsLiteralCrashResponse)
                 Toggle("New Retry screen", isOn: $developerSettings.usesNewRetryScreen)
                 NavigationLink("Последний ответ сервера") { DiagnosticResponseView() }
+                if Bundle.main.bundleIdentifier?.hasPrefix("dev.hikeri.kreshka.music") == true,
+                   let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                    ShareLink("Экспортировать журнал адаптера", item: documents.appendingPathComponent("Kreshka/bridge.log"))
+                }
                 Toggle("Live Activity: текст песни", isOn: $developerSettings.usesLiveActivity)
                     .onChange(of: developerSettings.usesLiveActivity) { _, _ in player.refreshLiveActivity() }
                 Text(liveActivity.status).font(.caption).foregroundStyle(.secondary)
