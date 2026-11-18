@@ -186,7 +186,9 @@ actor DemoMusicService: MusicService {
 #if SWIFT_PACKAGE
         bundle = .module
 #else
-        bundle = .main
+        bundle = Bundle.allFrameworks.first(where: {
+            $0.bundleIdentifier == "dev.hikeri.kreshka.music.bridge"
+        }) ?? .main
 #endif
         guard let url = bundle.url(forResource: track.id, withExtension: "wav", subdirectory: "DemoAudio")
             ?? bundle.url(forResource: track.id, withExtension: "wav")

@@ -13,6 +13,9 @@ static NSMutableDictionary<NSNumber *,NSString *> *libraryIdentifiers;
 static void KInstallModels(void);
 static void KLog(NSString *event);
 static void KBindNativeAccountButtons(UIView *view);
+static NSString *KLibraryIdentifier(NSNumber *persistentID) {
+    @synchronized (libraryIdentifiers) { return libraryIdentifiers[persistentID]; }
+}
 // These are the only direct CoreAnalytics symbols imported by the pinned
 // original binary. Its CoreAnalytics load is redirected to this framework.
 __attribute__((visibility("default")))
@@ -85,8 +88,8 @@ static NSError *KError(NSString *description) {
 - (BOOL)requiresAuthentication { return NO; }
 - (NSDate *)lastModifiedDate { return NSDate.date; }
 - (BOOL)hasMediaOfType:(NSUInteger)type { return [self.catalog[@"tracks"] count]>0; }
-- (BOOL)itemExistsWithPersistentID:(uint64_t)identifier { return libraryIdentifiers[@(identifier)]!=nil; }
-- (BOOL)collectionExistsWithPersistentID:(uint64_t)identifier groupingType:(NSInteger)type { return libraryIdentifiers[@(identifier)]!=nil; }
+- (BOOL)itemExistsWithPersistentID:(uint64_t)identifier { return KLibraryIdentifier(@(identifier))!=nil; }
+- (BOOL)collectionExistsWithPersistentID:(uint64_t)identifier groupingType:(NSInteger)type { return KLibraryIdentifier(@(identifier))!=nil; }
 - (id)itemResultSetForQueryCriteria:(id)criteria { return nil; }
 - (id)collectionResultSetForQueryCriteria:(id)criteria { return nil; }
 - (void)loadQueryCriteria:(id)criteria countOfItemsWithCompletionBlock:(void(^)(NSUInteger))completion {
@@ -188,7 +191,7 @@ static NSString *KIdentifier(id object,NSUInteger depth) {
     if ([content isKindOfClass:NSString.class] && [content hasPrefix:@"kr:"]) return [content substringFromIndex:3];
     NSString *vendor=KGet(object,@"vendorID");
     if ([vendor isKindOfClass:NSString.class] && [vendor hasPrefix:@"kr:"]) return [vendor substringFromIndex:3];
-    NSString *libraryID=libraryIdentifiers[KGet(object,@"deviceLibraryPersistentID") ?: @0];
+    NSString *libraryID=KLibraryIdentifier(KGet(object,@"deviceLibraryPersistentID") ?: @0);
     if (libraryID) return libraryID;
     if ([object isKindOfClass:NSArray.class]) {
         for (id value in object) { identifier=KIdentifier(value,depth+1); if (identifier) return identifier; }
@@ -212,7 +215,7 @@ static id KIdentifiers(NSString *identifier,Class modelClass) {
     NSData *bytes=[[NSString stringWithFormat:@"%@:%@",NSStringFromClass(modelClass),identifier] dataUsingEncoding:NSUTF8StringEncoding];
     for (NSUInteger i=0;i<bytes.length;i++) { persistentID^=((const uint8_t *)bytes.bytes)[i]; persistentID*=1099511628211ULL; }
     persistentID=(persistentID & INT64_MAX) ?: 1;
-    libraryIdentifiers[@(persistentID)]=identifier;
+    @synchronized (libraryIdentifiers) { libraryIdentifiers[@(persistentID)]=identifier; }
     void(^populate)(id)=^(id mutable){
         KSet(mutable,@"contentItemID",[@"kr:" stringByAppendingString:identifier]);
         KSet(mutable,@"vendorID",[@"kr:" stringByAppendingString:identifier]);

@@ -18,6 +18,8 @@ targets:
     sources:
       - path: KreshkaBackend.swift
       - path: RuntimeAdapter.m
+      - path: ../MapleMusic/Resources/DemoAudio
+        type: folder
       - path: ../Shared
       - path: ../MapleMusic
         excludes: [App/MapleMusicApp.swift, Resources]
