@@ -1,0 +1,150 @@
+name: Build original Music UI bridge IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/kreshka-music-bridge]
+permissions:
+  contents: read
+concurrency:
+  group: kreshka-original-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  bridge:
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
+      MUSIC_BACKEND_BASE_URL: ${{ vars.MUSIC_BACKEND_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+          cache: false
+      - name: Install XcodeGen
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          curl --fail --location --retry 5 https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/xcodegen"
+          ditto -x -k "$RUNNER_TEMP/xcodegen.zip" "$RUNNER_TEMP/xcodegen"
+          echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: Generate bridge project
+        run: |
+          set -euo pipefail
+          mkdir -p dist work/bridge-generated
+          xcodegen generate --spec MusicBridge/project.yml --project MusicBridge
+          xcodebuild -list -project MusicBridge/KreshkaBridge.xcodeproj
+      - name: Build device framework
+        run: |
+          set -euo pipefail
+          xcodebuild build -project MusicBridge/KreshkaBridge.xcodeproj -scheme KreshkaBridge \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/device-derived" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO ARCHS=arm64
+      - name: Fetch original Music from official Apple IPSW
+        run: |
+          set -euo pipefail
+          python3 tools/fetch_original_music.py "$RUNNER_TEMP/original-music"
+      - name: Package modified device IPA
+        run: |
+          set -euo pipefail
+          python3 tools/package_music_bridge.py --original "$ORIGINAL_MUSIC_APP" \
+            --framework "$RUNNER_TEMP/device-derived/Build/Products/Release-iphoneos/KreshkaBridge.framework" \
+            --output dist/KreshkaMusic-original-UI-experimental-unsigned.ipa
+          python3 tools/audit_music_private_api.py "$ORIGINAL_MUSIC_APP" --output dist/original-private-api
+      - name: Find available iPhone simulator
+        run: |
+          set -euo pipefail
+          simulator_id="$(xcrun simctl list devices available --json | jq -r '[.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone")))] | first | .udid // empty')"
+          test -n "$simulator_id"
+          echo "BRIDGE_SIMULATOR=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id" || true
+          xcrun simctl bootstatus "$simulator_id" -b
+      - name: Build simulator smoke host
+        run: |
+          set -euo pipefail
+          xcodebuild build -project MusicBridge/KreshkaBridge.xcodeproj -scheme BridgeSmoke \
+            -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$BRIDGE_SIMULATOR" \
+            -derivedDataPath "$RUNNER_TEMP/sim-derived" CODE_SIGNING_ALLOWED=NO
+      - name: Verify bridge startup without crashing
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/sim-derived/Build/Products/Debug-iphonesimulator/BridgeSmoke.app"
+          codesign --force --deep --sign - "$app"
+          xcrun simctl install "$BRIDGE_SIMULATOR" "$app"
+          launch="$(xcrun simctl launch --terminate-running-process "$BRIDGE_SIMULATOR" dev.hikeri.kreshka.music.smoke)"
+          echo "$launch"
+          pid="${launch##*: }"
+          sleep 12
+          ps -p "$pid" -o comm=
+          container="$(xcrun simctl get_app_container "$BRIDGE_SIMULATOR" dev.hikeri.kreshka.music.smoke data)"
+          test -s "$container/Documents/bridge-smoke.ready"
+          cp "$container/Documents/bridge-smoke.ready" dist/bridge-smoke.ready
+          xcrun simctl io "$BRIDGE_SIMULATOR" screenshot dist/bridge-smoke.png
+          xcrun simctl spawn "$BRIDGE_SIMULATOR" log show --last 3m --style compact --predicate 'process == "BridgeSmoke"' > dist/bridge-smoke.log
+          echo 'Bridge smoke host remained alive and reached KRESHKA_SMOKE_READY.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Check whether original Music UI can run on this simulator
+        run: |
+          set -euo pipefail
+          runtime="$(xcrun simctl getenv "$BRIDGE_SIMULATOR" SIMULATOR_ROOT 2>/dev/null || true)"
+          original=""
+          for candidate in "$runtime/Applications/Music.app" "$runtime/System/Applications/Music.app" "$runtime/private/var/staged_system_apps/Music.app"; do
+            if [[ -f "$candidate/Music" ]]; then original="$candidate"; break; fi
+          done
+          if [[ -z "$original" ]]; then
+            echo '{"bridge_smoke":"passed","original_music_simulator":"unavailable","device_ipa_runtime_verified":false}' > dist/simulator-status.json
+            echo 'The simulator runtime has no original Music.app. The iPhone arm64e binary cannot be run as a Simulator app. Only bridge startup was exercised.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 tools/package_music_bridge.py --simulator --original "$original" \
+            --framework "$RUNNER_TEMP/sim-derived/Build/Products/Debug-iphonesimulator/KreshkaBridge.framework" \
+            --output "$RUNNER_TEMP/original-music-sim.ipa"
+          mkdir -p "$RUNNER_TEMP/original-music-sim"
+          ditto -x -k "$RUNNER_TEMP/original-music-sim.ipa" "$RUNNER_TEMP/original-music-sim"
+          app="$RUNNER_TEMP/original-music-sim/Payload/Music.app"
+          codesign --force --deep --sign - "$app"
+          xcrun simctl install "$BRIDGE_SIMULATOR" "$app"
+          launch="$(xcrun simctl launch --terminate-running-process "$BRIDGE_SIMULATOR" dev.hikeri.kreshka.music)"
+          pid="${launch##*: }"
+          sleep 12
+          ps -p "$pid" -o comm=
+          xcrun simctl io "$BRIDGE_SIMULATOR" screenshot dist/original-music-sim.png
+          echo '{"bridge_smoke":"passed","original_music_simulator":"passed","device_ipa_runtime_verified":false}' > dist/simulator-status.json
+      - name: Collect crash diagnostics
+        if: always()
+        run: |
+          mkdir -p dist
+          if [[ -n "${BRIDGE_SIMULATOR:-}" ]]; then
+            xcrun simctl spawn "$BRIDGE_SIMULATOR" log show --last 10m --style compact --predicate 'eventMessage CONTAINS "KRESHKA" OR process == "BridgeSmoke"' > dist/runtime-diagnostics.log 2>&1 || true
+          fi
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f \( -name 'BridgeSmoke*' -o -name 'Music-*' \) -exec cp {} dist/ \; 2>/dev/null || true
+      - name: Upload modified IPA
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: KreshkaMusic-original-UI-experimental
+          path: |
+            dist/KreshkaMusic-original-UI-experimental-unsigned.ipa
+            dist/KreshkaMusic-original-UI-experimental-unsigned.report.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Upload simulator and dependency diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: KreshkaMusic-bridge-diagnostics
+          path: |
+            dist/*.log
+            dist/*.json
+            dist/*.ready
+            dist/*.png
+            dist/*.ips
+            dist/original-private-api
+          if-no-files-found: ignore
+          retention-days: 14

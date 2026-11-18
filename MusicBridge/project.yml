@@ -1,0 +1,59 @@
+name: KreshkaBridge
+options:
+  minimumXcodeGenVersion: 2.46.0
+  xcodeVersion: "26.3"
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    CODE_SIGNING_ALLOWED: NO
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  KreshkaBridge:
+    type: framework
+    platform: iOS
+    sources:
+      - path: KreshkaBackend.swift
+      - path: RuntimeAdapter.m
+      - path: ../Shared
+      - path: ../MapleMusic
+        excludes: [App/MapleMusicApp.swift, Resources]
+    info:
+      path: ../work/bridge-generated/Bridge-Info.plist
+      properties:
+        CFBundleIdentifier: dev.hikeri.kreshka.music.bridge
+        CFBundleVersion: "1"
+        CFBundleShortVersionString: "0.1.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.hikeri.kreshka.music.bridge
+        DEFINES_MODULE: YES
+        SWIFT_INSTALL_OBJC_HEADER: YES
+        SKIP_INSTALL: NO
+        MACH_O_TYPE: mh_dylib
+    scheme: {}
+  BridgeSmoke:
+    type: application
+    platform: iOS
+    sources:
+      - path: Smoke
+    dependencies:
+      - target: KreshkaBridge
+        embed: true
+    info:
+      path: ../work/bridge-generated/Smoke-Info.plist
+      properties:
+        CFBundleDisplayName: Kreshka Bridge Smoke
+        CFBundleIdentifier: dev.hikeri.kreshka.music.smoke
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UIBackgroundModes: [audio]
+        NSAppleMusicUsageDescription: Проверка адаптера интерфейса.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.hikeri.kreshka.music.smoke
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+    scheme: {}

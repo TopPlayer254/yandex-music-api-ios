@@ -1,0 +1,649 @@
+{
+  "Extensions/MusicFocusFilters.appex/MusicFocusFilters": {
+    "com.apple.accounts.appleaccount.fullaccess": true,
+    "com.apple.security.exception.shared-preference.read-write": [
+      "com.apple.mediaplaybackcore"
+    ]
+  },
+  "Frameworks/MusicApplication.framework/XPCServices/MusicScriptUpdateService.xpc/MusicScriptUpdateService": {
+    "com.apple.private.security.container-required": true,
+    "com.apple.rootless.storage.MusicApp": true,
+    "com.apple.security.application-groups": [
+      "group.com.apple.Music"
+    ],
+    "com.apple.security.exception.files.home-relative-path.read-write": [
+      "/Library/Caches/com.apple.Music/",
+      "/Library/Caches/com.apple.Music.MusicScriptUpdateService/",
+      "/Library/com.apple.Music/"
+    ],
+    "com.apple.security.files.downloads.read-write": true,
+    "com.apple.security.network.client": true
+  },
+  "Music": {
+    "CARCapableApp": true,
+    "FairPlay-Classic-Client": true,
+    "SBStarkCapable": true,
+    "abs-client": "1192613791",
+    "adi-client": "409835401",
+    "application-identifier": "com.apple.Music",
+    "aps-connection-initiate": true,
+    "com.apple.CommCenter.fine-grained": [
+      "spi"
+    ],
+    "com.apple.Contacts.database-allow": true,
+    "com.apple.LinearMediaKit.environments": true,
+    "com.apple.LinearMediaKit.inlineScene": true,
+    "com.apple.PairingManager.Read": true,
+    "com.apple.PairingManager.RemovePeer": true,
+    "com.apple.PairingManager.Write": true,
+    "com.apple.PerfPowerServices.data-donation": true,
+    "com.apple.accounts.appleaccount.fullaccess": true,
+    "com.apple.accounts.appleidauthentication.defaultaccess": true,
+    "com.apple.appleaccount.custodian": true,
+    "com.apple.appstored.xpc.updates": true,
+    "com.apple.assertiond.background-view-services": true,
+    "com.apple.assistant.contextprovider": true,
+    "com.apple.atc.private": true,
+    "com.apple.authkit.client.internal": true,
+    "com.apple.authkit.client.private": true,
+    "com.apple.avfoundation.allow-system-wide-context": true,
+    "com.apple.avfoundation.allows-access-to-device-list": true,
+    "com.apple.avfoundation.allows-set-output-device": true,
+    "com.apple.bulletinboard.observer": true,
+    "com.apple.cards.all-access": true,
+    "com.apple.cdp.recoverykey": true,
+    "com.apple.coreaudio.allow-amr-decode": true,
+    "com.apple.coreaudio.allow-amr-encode": true,
+    "com.apple.coreaudio.app-tap": true,
+    "com.apple.coreaudio.register-internal-aus": true,
+    "com.apple.coreaudio.untrackedSpatialization.allow": true,
+    "com.apple.coreidvd.spi": true,
+    "com.apple.coremedia.allow-protected-content-playback": true,
+    "com.apple.coretelephony.Identity.get": true,
+    "com.apple.developer.associated-domains": [],
+    "com.apple.developer.declared-age-range": true,
+    "com.apple.developer.group-session": true,
+    "com.apple.developer.icloud-services": [
+      "CloudKit"
+    ],
+    "com.apple.developer.networking.carrier-constrained.app-optimized": true,
+    "com.apple.developer.networking.carrier-constrained.appcategory": "music-8004",
+    "com.apple.developer.networking.multipath": true,
+    "com.apple.developer.ubiquity-kvstore-identifier": "com.apple.Music",
+    "com.apple.developer.usernotifications.time-sensitive": true,
+    "com.apple.developer.wireless-insights.service-predictions": true,
+    "com.apple.excludes-extensions": true,
+    "com.apple.extensionkit.host.extension-point-identifiers": [
+      "com.apple.groupactivities"
+    ],
+    "com.apple.familycircle.agent": true,
+    "com.apple.frontboard.launchapplications": true,
+    "com.apple.intents.intents-helper": true,
+    "com.apple.itunescloud.delegate-account-store": true,
+    "com.apple.itunescloud.delegation-provider": true,
+    "com.apple.itunescloud.in-app-message-service": true,
+    "com.apple.itunescloud.quic.inprocess": true,
+    "com.apple.itunescloudd.private": true,
+    "com.apple.itunesstored.private": true,
+    "com.apple.launchservices.receivereferrerrurl": true,
+    "com.apple.linearmediakit": true,
+    "com.apple.managedconfiguration.profiled-access": true,
+    "com.apple.mediaremote.device-info": true,
+    "com.apple.mediaremote.group-sessions": true,
+    "com.apple.mediaremote.remote-control-discovery": true,
+    "com.apple.mediaremote.set-playback-state": "YES",
+    "com.apple.mobileactivationd.spi": true,
+    "com.apple.multitasking.unlimitedassertions": true,
+    "com.apple.nano.nanoregistry.generalaccess": true,
+    "com.apple.nanosystemsettings": [
+      "accounts"
+    ],
+    "com.apple.payment.all-access": true,
+    "com.apple.payment.amp-card-enrollment": true,
+    "com.apple.payment.card-on-file": true,
+    "com.apple.private.CarPlayUIServices.status-bar-style": true,
+    "com.apple.private.CoreAuthentication.SPI": true,
+    "com.apple.private.FairPlayIOKitUserClient.access": true,
+    "com.apple.private.MobileGestalt.AllowedProtectedKeys": [
+      "SerialNumber",
+      "UniqueDeviceID"
+    ],
+    "com.apple.private.accounts.allaccounts": true,
+    "com.apple.private.applemediaservices": true,
+    "com.apple.private.appstored": [
+      "Library",
+      "Purchase",
+      "IAPHistory"
+    ],
+    "com.apple.private.bmk.allow": true,
+    "com.apple.private.carkit.app": true,
+    "com.apple.private.cfnetwork.har-capture-amp": true,
+    "com.apple.private.contacts": true,
+    "com.apple.private.controlcenter.service.moduleidentifiers": [
+      "com.apple.shazamkit.controlcenter.ShazamModule"
+    ],
+    "com.apple.private.coreaudio.viewInterruptorName.allow": true,
+    "com.apple.private.coreservices.canmaplsdatabase": true,
+    "com.apple.private.corewifi": true,
+    "com.apple.private.hid.client.event-dispatch.internal": true,
+    "com.apple.private.hsa-authentication-processing": true,
+    "com.apple.private.iad.background-client": true,
+    "com.apple.private.iad.privileged-client": true,
+    "com.apple.private.ids.phone-number-authentication": true,
+    "com.apple.private.ids.registration": [
+      "com.apple.private.alloy.itunes"
+    ],
+    "com.apple.private.ids.remoteurlconnection": true,
+    "com.apple.private.ids.session": [
+      "com.apple.private.alloy.itunes"
+    ],
+    "com.apple.private.imcore.imremoteurlconnection": true,
+    "com.apple.private.in-app-payments": true,
+    "com.apple.private.jetpackassetd": true,
+    "com.apple.private.privacy.accounting.write": true,
+    "com.apple.private.rtcreportingd": true,
+    "com.apple.private.security.container-required": true,
+    "com.apple.private.security.restricted-application-groups": [
+      "com.apple.SonicKit"
+    ],
+    "com.apple.private.security.system-application": true,
+    "com.apple.private.sociallayer.highlights": true,
+    "com.apple.private.swc.additional-service-details-consumer": true,
+    "com.apple.private.swc.system-app": true,
+    "com.apple.private.tcc.allow": [
+      "kTCCServiceMediaLibrary",
+      "kTCCServiceCamera",
+      "kTCCServiceFaceID",
+      "kTCCServicePhotos"
+    ],
+    "com.apple.private.tcc.allow-or-regional-prompt": [
+      "kTCCServiceAddressBook"
+    ],
+    "com.apple.private.ubiquity-additional-kvstore-identifiers": [
+      "com.apple.music.concerts"
+    ],
+    "com.apple.proactive.eventtracker": true,
+    "com.apple.rootless.storage.MusicApp": true,
+    "com.apple.runningboard.jetengine": true,
+    "com.apple.runningboard.process-state": true,
+    "com.apple.runningboard.sonic": true,
+    "com.apple.security.application-groups": [
+      "group.com.apple.Music",
+      "com.apple.SonicKit",
+      "com.apple.MusicUI.engagement"
+    ],
+    "com.apple.security.assets.music.read-write": true,
+    "com.apple.security.exception.files.absolute-path.read-only": [
+      "/private/var/tmp/MediaCache",
+      "/private/var/staged_system_apps/"
+    ],
+    "com.apple.security.exception.files.home-relative-path.read-only": [
+      "/Library/Preferences/com.apple.restrictionspassword.plist",
+      "/Library/com.apple.Music/Updatable Assets/",
+      "/Library/Caches/com.apple.iTunesCloud/InAppMessages/ResourceCache/",
+      "/Library/Trial/"
+    ],
+    "com.apple.security.exception.files.home-relative-path.read-write": [
+      "/Library/com.apple.itunesstored/",
+      "/Library/com.apple.Music/musicAppDataVault",
+      "/Library/com.apple.iTunesCloud/",
+      "/Library/Caches/com.apple.Music/",
+      "/Library/Cookies/",
+      "/Media/",
+      "/Library/Caches/com.apple.Radio/",
+      "/Library/Caches/com.apple.iTunesStore/",
+      "/Library/Caches/sharedCaches/com.apple.Radio.RadioImageCache/",
+      "/Library/Caches/sharedCaches/com.apple.Radio.RadioRequestURLCache/",
+      "/Library/com.apple.MediaSocial/",
+      "/Library/DeviceRegistry/",
+      "/Library/Logs/MediaServices/",
+      "/Library/Caches/com.apple.AppleMediaServices/",
+      "/Containers/Data/PluginKitPlugin/"
+    ],
+    "com.apple.security.exception.mach-lookup.global-name": [
+      "com.apple.iTunesCloud.SharedListeningConnectionService",
+      "com.apple.private.corewifi-xpc",
+      "com.apple.carkit.app.service",
+      "com.apple.sharing.sharesheetuserdefaults",
+      "com.apple.nanosystemsettings",
+      "com.apple.adid",
+      "com.apple.ak.anisette.xpc",
+      "com.apple.askpermissiond",
+      "com.apple.familycircle.agent",
+      "com.apple.hsa-authentication-server",
+      "com.apple.mediaartworkd.xpc",
+      "com.apple.MediaPlayer.MPRadioControllerServer",
+      "com.apple.rtcreportingd",
+      "com.apple.storebookkeeperd.xpc",
+      "com.apple.atc.xpc",
+      "com.apple.atc.xpc.downloadprogress",
+      "com.apple.atc.xpc.runkeeplocaltask",
+      "com.apple.PairingManager",
+      "com.apple.itunescloudd.playactivity",
+      "com.apple.nanoprefsync",
+      "com.apple.itunescloud.delegation-provider",
+      "com.apple.itunescloud.delegate-account-store",
+      "com.apple.coremedia.endpointpicker.xpc",
+      "com.apple.coremedia.routediscoverer.xpc",
+      "com.apple.coremedia.routingcontext.xpc",
+      "com.apple.coremedia.endpointremotecontrolsession.xpc",
+      "com.apple.bulletinboard.observerconnection",
+      "com.apple.symptom_analytics",
+      "com.apple.itunescloud.contenttaste",
+      "com.apple.lsd.modifydb",
+      "com.apple.itunescloud.in-app-message-service",
+      "com.apple.itunescloud.music-subscription-status-service",
+      "com.apple.identityservicesd.embedded.auth",
+      "com.apple.itunescloud.media-app-banner-service",
+      "com.apple.itunescloud.remote-request-execution-service",
+      "com.apple.siri.activation.service",
+      "com.apple.Music.MusicScriptUpdateService",
+      "com.apple.AppleMediaServicesUIDynamicService",
+      "com.apple.passd.in-app-payment",
+      "com.apple.xpc.amsaccountsd",
+      "com.apple.coreidvd.proofing",
+      "com.apple.sociallayerd",
+      "com.apple.aa.custodian.xpc",
+      "com.apple.extensionkitservice",
+      "com.apple.aa.inheritance.xpc",
+      "com.apple.cdp.daemon",
+      "com.apple.controlcenter.remoteservice",
+      "com.apple.symptom_diagnostics",
+      "com.apple.siri.external_request",
+      "com.apple.itunescloud.library-auth-token-provider",
+      "com.apple.siri.analytics.assistant",
+      "com.apple.identityservicesd.embedded.auth",
+      "com.apple.passd.library",
+      "com.apple.passd.payment",
+      "com.apple.appstored.xpc",
+      "com.apple.appstored.xpc.request",
+      "com.apple.passd.account",
+      "com.apple.passd.peer-payment",
+      "com.apple.lsd.xpc",
+      "com.apple.mobile.keybagd.xpc",
+      "com.apple.CarPlayApp.status-bar-service",
+      "com.apple.CarPlayApp.service",
+      "com.apple.powerlog.plxpclogger.xpc",
+      "com.apple.PerfPowerTelemetryClientRegistrationService",
+      "com.apple.surfboard.scenesessionservice",
+      "com.apple.devicesharing.guestusermodeservice",
+      "com.apple.backlightd",
+      "com.apple.absd",
+      "com.apple.aa.daemon.xpc",
+      "com.apple.fairplayd.xpc",
+      "com.apple.timed.xpc",
+      "com.apple.jetpackassetd.xpc"
+    ],
+    "com.apple.security.exception.mach-register.global-name": [
+      "com.apple.Music.MPMusicPlayerMigServer"
+    ],
+    "com.apple.security.exception.process-info": true,
+    "com.apple.security.exception.shared-preference.read-only": [
+      "com.apple.MusicKit",
+      "com.apple.carplay.internal"
+    ],
+    "com.apple.security.exception.shared-preference.read-write": [
+      "com.apple.SocialLayer",
+      "com.apple.mediaplaybackcore",
+      "com.apple.videos-preferences",
+      "com.apple.mobileipod",
+      "com.apple.Music",
+      "com.apple.Fuse",
+      "com.apple.itunesstored",
+      "com.apple.homesharing",
+      "com.apple.mediaremote",
+      "com.apple.MediaSocial",
+      "com.apple.restrictionspassword",
+      "com.apple.itunescloudd",
+      "com.apple.medialibrary",
+      "com.apple.itunescloud",
+      "com.apple.itunescloud.internal",
+      "com.apple.AppleMediaServices",
+      "com.apple.springboard",
+      "com.apple.ClarityUI.Music",
+      "com.apple.Accessibility"
+    ],
+    "com.apple.security.files.downloads.read-write": true,
+    "com.apple.security.network.client": true,
+    "com.apple.sharesheet.allow-custom-view": true,
+    "com.apple.sharesheet.userdefaults": true,
+    "com.apple.siri.activation.service": true,
+    "com.apple.siri.external_request": true,
+    "com.apple.smoot.subscriptionservice": true,
+    "com.apple.springboard.activateassistant": true,
+    "com.apple.springboard.homeScreenIconStyle": true,
+    "com.apple.springboard.launchapplications": true,
+    "com.apple.springboard.opensensitiveurl": true,
+    "com.apple.springboard.openurlinbackground": true,
+    "com.apple.springboard.openurlswhenlocked": true,
+    "com.apple.springboard.shortcutitems.customimage": true,
+    "com.apple.springboard.wallpaperAnimationSuspension": true,
+    "com.apple.surfboard.allow-any-custom-shader": true,
+    "com.apple.surfboard.chrome-customization": true,
+    "com.apple.surfboard.environment-client": true,
+    "com.apple.surfboard.immersion-client": true,
+    "com.apple.surfboard.scenesession-updates": true,
+    "com.apple.symptom_analytics.query": true,
+    "com.apple.symptom_diagnostics.report": true,
+    "com.apple.symptoms.NetworkOfInterest": true,
+    "com.apple.symptoms.nw_activity.database": true,
+    "com.apple.telephony.cupolicy-rw-access": true,
+    "com.apple.timed": true,
+    "com.apple.trial.client": [
+      "MUSIC_PLAYBACK_PERFORMANCE_STEREO_HLS"
+    ],
+    "com.apple.wallet.features.all-access": true,
+    "com.apple.wifi.manager-access": true,
+    "fairplay-client": 1974055701,
+    "keychain-access-groups": [
+      "apple",
+      "com.apple.MediaRemote.pairing"
+    ],
+    "platform-application": true
+  },
+  "PlugIns/MediaPicker.appex/MediaPicker": {
+    "adi-client": "409835401",
+    "aps-connection-initiate": true,
+    "com.apple.CommCenter.fine-grained": [
+      "spi"
+    ],
+    "com.apple.PairingManager.Read": true,
+    "com.apple.PairingManager.RemovePeer": true,
+    "com.apple.PairingManager.Write": true,
+    "com.apple.accounts.appleaccount.fullaccess": true,
+    "com.apple.accounts.appleidauthentication.defaultaccess": true,
+    "com.apple.assertiond.background-view-services": true,
+    "com.apple.assistant.contextprovider": true,
+    "com.apple.atc.private": true,
+    "com.apple.authkit.client.private": true,
+    "com.apple.avfoundation.allow-system-wide-context": true,
+    "com.apple.bulletinboard.observer": true,
+    "com.apple.coreaudio.allow-amr-decode": true,
+    "com.apple.coreaudio.allow-amr-encode": true,
+    "com.apple.coremedia.allow-protected-content-playback": true,
+    "com.apple.coretelephony.Identity.get": true,
+    "com.apple.developer.networking.multipath": true,
+    "com.apple.familycircle.agent": true,
+    "com.apple.itunescloud.delegate-account-store": true,
+    "com.apple.itunescloud.delegation-provider": true,
+    "com.apple.itunescloud.in-app-message-service": true,
+    "com.apple.itunesstored.private": true,
+    "com.apple.launchservices.receivereferrerrurl": true,
+    "com.apple.managedconfiguration.profiled-access": true,
+    "com.apple.nanosystemsettings": [
+      "accounts"
+    ],
+    "com.apple.private.accounts.allaccounts": true,
+    "com.apple.private.applemediaservices": true,
+    "com.apple.private.coreservices.canmaplsdatabase": true,
+    "com.apple.private.iad.background-client": true,
+    "com.apple.private.iad.privileged-client": true,
+    "com.apple.private.rtcreportingd": true,
+    "com.apple.private.security.container-required": true,
+    "com.apple.private.tcc.allow": [
+      "kTCCServiceMediaLibrary"
+    ],
+    "com.apple.private.tcc.allow-or-regional-prompt": [
+      "kTCCServiceAddressBook"
+    ],
+    "com.apple.rootless.storage.MusicApp": true,
+    "com.apple.security.application-groups": [
+      "group.com.apple.Music"
+    ],
+    "com.apple.security.assets.music.read-write": true,
+    "com.apple.security.exception.files.absolute-path.read-only": [
+      "/private/var/tmp/MediaCache",
+      "/private/var/staged_system_apps/"
+    ],
+    "com.apple.security.exception.files.home-relative-path.read-only": [
+      "/Library/Preferences/com.apple.restrictionspassword.plist",
+      "/Library/com.apple.Music/Updatable Assets/",
+      "/Library/Caches/com.apple.iTunesCloud/InAppMessages/ResourceCache/"
+    ],
+    "com.apple.security.exception.files.home-relative-path.read-write": [
+      "/Library/com.apple.itunesstored/",
+      "/Library/com.apple.iTunesCloud/",
+      "/Library/Caches/com.apple.Music/",
+      "/Library/Cookies/",
+      "/Media/",
+      "/Library/Caches/com.apple.Radio/",
+      "/Library/Caches/com.apple.iTunesStore/",
+      "/Library/Caches/sharedCaches/com.apple.Radio.RadioImageCache/",
+      "/Library/Caches/sharedCaches/com.apple.Radio.RadioRequestURLCache/",
+      "/Library/com.apple.MediaSocial/",
+      "/Library/DeviceRegistry/",
+      "/Library/Logs/MediaServices/"
+    ],
+    "com.apple.security.exception.mach-lookup.global-name": [
+      "com.apple.nanosystemsettings",
+      "com.apple.adid",
+      "com.apple.ak.anisette.xpc",
+      "com.apple.askpermissiond",
+      "com.apple.familycircle.agent",
+      "com.apple.hsa-authentication-server",
+      "com.apple.mediaartworkd.xpc",
+      "com.apple.MediaPlayer.MPRadioControllerServer",
+      "com.apple.rtcreportingd",
+      "com.apple.storebookkeeperd.xpc",
+      "com.apple.atc.xpc",
+      "com.apple.atc.xpc.downloadprogress",
+      "com.apple.atc.xpc.runkeeplocaltask",
+      "com.apple.PairingManager",
+      "com.apple.itunescloudd.playactivity",
+      "com.apple.nanoprefsync",
+      "com.apple.itunescloud.delegation-provider",
+      "com.apple.itunescloud.delegate-account-store",
+      "com.apple.coremedia.endpointpicker.xpc",
+      "com.apple.coremedia.routediscoverer.xpc",
+      "com.apple.coremedia.routingcontext.xpc",
+      "com.apple.coremedia.endpointremotecontrolsession.xpc",
+      "com.apple.bulletinboard.observerconnection",
+      "com.apple.symptom_analytics",
+      "com.apple.itunescloud.contenttaste",
+      "com.apple.lsd.modifydb",
+      "com.apple.itunescloud.in-app-message-service",
+      "com.apple.itunescloud.music-subscription-status-service",
+      "com.apple.identityservicesd.embedded.auth",
+      "com.apple.itunescloud.media-app-banner-service",
+      "com.apple.itunescloud.remote-request-execution-service",
+      "com.apple.absd"
+    ],
+    "com.apple.security.exception.process-info": true,
+    "com.apple.security.exception.shared-preference.read-write": [
+      "com.apple.mediaplaybackcore",
+      "com.apple.videos-preferences",
+      "com.apple.mobileipod",
+      "com.apple.Music",
+      "com.apple.Fuse",
+      "com.apple.itunesstored",
+      "com.apple.homesharing",
+      "com.apple.mediaremote",
+      "com.apple.MediaSocial",
+      "com.apple.restrictionspassword",
+      "com.apple.itunescloudd",
+      "com.apple.medialibrary",
+      "com.apple.itunescloud",
+      "com.apple.itunescloud.internal",
+      "com.apple.AppleMediaServices"
+    ],
+    "com.apple.security.files.downloads.read-write": true,
+    "com.apple.security.network.client": true,
+    "com.apple.smoot.subscriptionservice": true,
+    "com.apple.springboard.activateassistant": true,
+    "com.apple.springboard.opensensitiveurl": true,
+    "com.apple.springboard.shortcutitems.customimage": true,
+    "com.apple.springboard.wallpaperAnimationSuspension": true,
+    "com.apple.symptoms.NetworkOfInterest": true,
+    "com.apple.telephony.cupolicy-rw-access": true,
+    "com.apple.wifi.manager-access": true,
+    "fairplay-client": 1974055701,
+    "keychain-access-groups": [
+      "apple",
+      "com.apple.MediaRemote.pairing"
+    ]
+  },
+  "PlugIns/MusicCoreSpotlightExtension.appex/MusicCoreSpotlightExtension": {
+    "com.apple.private.tcc.allow": [
+      "kTCCServiceMediaLibrary"
+    ],
+    "com.apple.security.hardened-process": true
+  },
+  "PlugIns/MusicMessagesApp.appex/MusicMessagesApp": {
+    "adi-client": "409835401",
+    "com.apple.accounts.appleaccount.fullaccess": true,
+    "com.apple.authkit.client.private": true,
+    "com.apple.developer.hardened-process": true,
+    "com.apple.itunesstored.private": true,
+    "com.apple.private.attribution.implicitly-assumed-identity": {
+      "type": "bundleID",
+      "value": "com.apple.Music"
+    },
+    "com.apple.private.tcc.allow": [
+      "kTCCServiceMediaLibrary"
+    ],
+    "com.apple.security.exception.files.home-relative-path.read-write": [
+      "/Library/Caches/com.apple.Music/",
+      "/Media/"
+    ],
+    "com.apple.security.exception.files.home-relative-path.read-write - 2": [
+      "/Library/com.apple.itunesstored/",
+      "/Library/Cookies/",
+      "/Library/Caches/com.apple.iTunesStore/"
+    ],
+    "com.apple.security.exception.mach-lookup.global-name": [
+      "com.apple.ak.anisette.xpc"
+    ],
+    "com.apple.security.exception.shared-preference.read-write": [
+      "com.apple.itunesstored"
+    ],
+    "com.apple.security.network.client": true,
+    "fairplay-client": 1974055701,
+    "keychain-access-groups": [
+      "apple"
+    ]
+  },
+  "PlugIns/MusicNotificationContentExtension.appex/MusicNotificationContentExtension": {
+    "application-identifier": "com.apple.Music.MusicNotificationContentExtension",
+    "com.apple.private.applemediaservices": true,
+    "com.apple.private.coreservices.canmaplsdatabase": true,
+    "com.apple.private.security.container-required": true,
+    "com.apple.security.exception.files.home-relative-path.read-only": [
+      "/Library/Caches/com.apple.AppleMediaServices/",
+      "/Library/UserNotifications/"
+    ]
+  },
+  "PlugIns/MusicWidgets.appex/MusicWidgets": {
+    "application-identifier": "com.apple.Music.MusicWidgets",
+    "com.apple.accounts.appleaccount.fullaccess": true,
+    "com.apple.accounts.appleidauthentication.defaultaccess": true,
+    "com.apple.authkit.client.private": true,
+    "com.apple.itunesstored.private": true,
+    "com.apple.mediaremote.device-info": true,
+    "com.apple.mediaremote.remote-control-discovery": true,
+    "com.apple.private.applemediaservices": true,
+    "com.apple.private.attribution.implicitly-assumed-identity": {
+      "type": "bundleID",
+      "value": "com.apple.Music"
+    },
+    "com.apple.private.coreservices.canmaplsdatabase": true,
+    "com.apple.private.corewifi": true,
+    "com.apple.private.tcc.allow": [
+      "kTCCServiceMediaLibrary"
+    ],
+    "com.apple.runningboard.sonic": true,
+    "com.apple.security.app-sandbox": true,
+    "com.apple.security.application-groups": [
+      "group.com.apple.Music"
+    ],
+    "com.apple.security.exception.files.absolute-path.read-only": [
+      "/private/var/mobile/Library/com.apple.PrivacyDisclosure/"
+    ],
+    "com.apple.security.exception.files.home-relative-path.read-write": [
+      "/Library/Caches/com.apple.AppleMediaServices/",
+      "/Library/Caches/com.apple.Music/",
+      "/Media/"
+    ],
+    "com.apple.security.exception.mach-lookup.global-name": [
+      "com.apple.adid",
+      "com.apple.ak.anisette.xpc",
+      "com.apple.itunescloud.contenttaste",
+      "com.apple.itunescloud.delegation-provider",
+      "com.apple.itunescloud.delegate-account-store",
+      "com.apple.itunescloud.music-subscription-status-service",
+      "com.apple.itunescloud.remote-request-execution-service",
+      "com.apple.itunescloudd.playactivity",
+      "com.apple.mediaartworkd.xpc",
+      "com.apple.siri.VoiceShortcuts.xpc",
+      "com.apple.linkd.registry",
+      "com.apple.private.corewifi-xpc"
+    ],
+    "com.apple.security.exception.shared-preference.read-write": [
+      "com.apple.itunescloud",
+      "com.apple.itunescloud.internal"
+    ],
+    "com.apple.security.network.client": true,
+    "com.apple.symptoms.NetworkOfInterest": true,
+    "keychain-access-groups": [
+      "apple"
+    ]
+  },
+  "PlugIns/StoreFlowExtension.appex/StoreFlowExtension": {
+    "abs-client": "1192613791",
+    "adi-client": "409835401",
+    "com.apple.CommCenter.fine-grained": [
+      "spi"
+    ],
+    "com.apple.authkit.client.internal": true,
+    "com.apple.cards.all-access": true,
+    "com.apple.coretelephony.Identity.get": true,
+    "com.apple.features.all-access": true,
+    "com.apple.frontboard.launchapplications": true,
+    "com.apple.icloud.findmydeviced.access": true,
+    "com.apple.itunesstored.private": true,
+    "com.apple.managedconfiguration.profiled-access": true,
+    "com.apple.payment.all-access": true,
+    "com.apple.payment.amp-card-enrollment": true,
+    "com.apple.payment.card-on-file": true,
+    "com.apple.private.CoreAuthentication.SPI": true,
+    "com.apple.private.accounts.allaccounts": true,
+    "com.apple.private.applemediaservices": true,
+    "com.apple.private.bmk.allow": true,
+    "com.apple.private.coreservices.canmaplsdatabase": true,
+    "com.apple.private.familycircle": true,
+    "com.apple.private.hsa-authentication-processing": true,
+    "com.apple.private.mobilesms.messages-recipient-vetting": true,
+    "com.apple.private.tcc.allow": [
+      "kTCCServiceMediaLibrary"
+    ],
+    "com.apple.security.exception.files.home-relative-path.read-write": [
+      "/Library/Cookies/",
+      "/Library/com.apple.iTunesCloud/"
+    ],
+    "com.apple.security.exception.mach-lookup.global-name": [
+      "com.apple.AppleMediaServicesUIDynamicService",
+      "com.apple.absd",
+      "com.apple.adid",
+      "com.apple.ak.anisette.xpc",
+      "com.apple.askpermissiond",
+      "com.apple.cdp.daemon",
+      "com.apple.hsa-authentication-server",
+      "com.apple.itunescloud.music-subscription-status-service",
+      "com.apple.mobile.keybagd.xpc",
+      "com.apple.passd.in-app-payment",
+      "com.apple.passd.library",
+      "com.apple.xpc.amsaccountsd"
+    ],
+    "com.apple.security.exception.shared-preference.read-write": [
+      "com.apple.itunescloud",
+      "com.apple.itunescloudd",
+      "com.apple.Music",
+      "com.apple.mobileipod"
+    ],
+    "com.apple.springboard.CFUserNotification": true,
+    "com.apple.springboard.opensensitiveurl": true,
+    "fairplay-client": 1974055701,
+    "keychain-access-groups": [
+      "apple"
+    ]
+  }
+}

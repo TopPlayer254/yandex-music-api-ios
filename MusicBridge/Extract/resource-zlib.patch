@@ -1,0 +1,81 @@
+--- a/reader.go
++++ b/reader.go
+@@ -902,6 +902,8 @@
+ 		return nil, fmt.Errorf("invalid APFS compressed block")
+ 	}
+ 	switch method {
++	case uint32(types.CMP_RSRC_ZLIB):
++		return decodeInline(data, uint64(size), cmpAttrZlib)
+ 	case cmpRsrcLZVN:
+ 		if data[0] == 6 {
+ 			return storedBlock(data, size)
+@@ -949,12 +951,16 @@
+ type compressedReader struct {
+ 	source  *File
+ 	offsets []uint32
++	lengths []uint32
+ 	size    int64
+ 	method  uint32
+ 	cache   *lru.Cache[int, []byte]
+ }
+ 
+ func newCompressedFile(source *File, size uint64, method uint32) (*File, error) {
++	if method == uint32(types.CMP_RSRC_ZLIB) {
++		return newZlibResourceFile(source, size)
++	}
+ 	if method != cmpRsrcLZVN && method != cmpRsrcLZFSE && method != cmpRsrcLZBitmap {
+ 		return nil, fmt.Errorf("unsupported resource compression %d", method)
+ 	}
+@@ -978,7 +984,40 @@
+ 		return nil, fmt.Errorf("invalid resource table")
+ 	}
+ 	cache, _ := lru.New[int, []byte](readerChunkCache)
+-	return &File{ReaderAt: &compressedReader{source, offsets, int64(size), method, cache}, Size: int64(size)}, nil
++	return &File{ReaderAt: &compressedReader{source: source, offsets: offsets, size: int64(size), method: method, cache: cache}, Size: int64(size)}, nil
++}
++
++// Zlib resource forks have a big-endian resource header followed by a
++// little-endian count and offset/length pairs, unlike the other codecs.
++func newZlibResourceFile(source *File, size uint64) (*File, error) {
++	if size == 0 || size > readerMaxCompressed {
++		return nil, fmt.Errorf("zlib resource size out of range")
++	}
++	header := make([]byte, 16)
++	if err := readFull(source, header, 0); err != nil { return nil, err }
++	base := uint64(binary.BigEndian.Uint32(header))
++	if base < 16 || base+8 > uint64(source.Size) { return nil, fmt.Errorf("invalid zlib resource header") }
++	blockHeader := make([]byte, 8)
++	if err := readFull(source, blockHeader, int64(base)); err != nil { return nil, err }
++	count := uint64(le.Uint32(blockHeader[4:]))
++	if count != (size+readerChunkSize-1)/readerChunkSize || base+8+count*8 > uint64(source.Size) {
++		return nil, fmt.Errorf("invalid zlib resource block count")
++	}
++	table := make([]byte, count*8)
++	if err := readFull(source, table, int64(base+8)); err != nil { return nil, err }
++	offsets, lengths := make([]uint32, count), make([]uint32, count)
++	end := base+8+count*8
++	for i := range offsets {
++		start := base+4+uint64(le.Uint32(table[i*8:]))
++		length := uint64(le.Uint32(table[i*8+4:]))
++		if start < end || length == 0 || length > readerChunkSize+1024 || start+length > uint64(source.Size) || start > 0xffffffff {
++			return nil, fmt.Errorf("invalid zlib resource block")
++		}
++		offsets[i], lengths[i] = uint32(start), uint32(length)
++		end = start+length
++	}
++	cache, _ := lru.New[int, []byte](readerChunkCache)
++	return &File{ReaderAt: &compressedReader{source:source, offsets:offsets, lengths:lengths, size:int64(size), method:uint32(types.CMP_RSRC_ZLIB), cache:cache}, Size:int64(size)}, nil
+ }
+ 
+ func (r *compressedReader) ReadAt(p []byte, off int64) (int, error) {
+@@ -1009,7 +1048,9 @@
+ 	if data, ok := r.cache.Get(index); ok {
+ 		return data, nil
+ 	}
+-	encoded := make([]byte, r.offsets[index+1]-r.offsets[index])
++	var length uint32
++	if r.lengths != nil { length = r.lengths[index] } else { length = r.offsets[index+1]-r.offsets[index] }
++	encoded := make([]byte, length)
+ 	if err := readFull(r.source, encoded, int64(r.offsets[index])); err != nil {
+ 		return nil, err
+ 	}
