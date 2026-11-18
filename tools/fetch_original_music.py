@@ -32,6 +32,7 @@ def main(destination):
         apfs=tools/'go-apfs'
         if not apfs.exists():
             shutil.copytree(modules/'github.com/blacktop/go-apfs@v1.0.32',apfs)
+            apfs.chmod(apfs.stat().st_mode|stat.S_IWUSR)
             for path in apfs.rglob('*'):
                 path.chmod(path.stat().st_mode|stat.S_IWUSR)
             run('patch','-p1','-i',str(ROOT/'MusicBridge/Extract/resource-zlib.patch'),cwd=apfs)
