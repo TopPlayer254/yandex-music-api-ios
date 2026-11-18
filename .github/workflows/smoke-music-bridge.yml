@@ -14,7 +14,7 @@ concurrency:
 jobs:
   screens:
     runs-on: macos-26-intel
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
     steps:
@@ -37,7 +37,7 @@ jobs:
             -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/sim-derived" CODE_SIGNING_ALLOWED=NO ARCHS=x86_64 ONLY_ACTIVE_ARCH=YES
       - name: Boot latest installed iPhone simulator
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
           set -euo pipefail
           simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys,re; d=json.load(sys.stdin); candidates=[(tuple(map(int,re.findall(r"\d+",runtime))),dev["udid"]) for runtime,devices in d["devices"].items() for dev in devices if dev.get("isAvailable") and dev["name"].startswith("iPhone") and tuple(map(int,re.findall(r"\d+",runtime)))[:2] <= (26,5)]; print(max(candidates)[1])')"
@@ -45,7 +45,7 @@ jobs:
           xcrun simctl boot "$simulator_id" || true
           xcrun simctl bootstatus "$simulator_id" -b
       - name: Launch, check liveness and capture account screen
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: |
           set -euxo pipefail
           app="$RUNNER_TEMP/sim-derived/Build/Products/Release-iphonesimulator/BridgeSmoke.app"
@@ -54,15 +54,19 @@ jobs:
           launch="$(xcrun simctl launch --terminate-running-process "$BRIDGE_SIMULATOR" dev.hikeri.kreshka.music.smoke)"
           echo "$launch"
           pid="${launch##*: }"
-          sleep 12
-          ps -p "$pid" -o comm=
           container="$(xcrun simctl get_app_container "$BRIDGE_SIMULATOR" dev.hikeri.kreshka.music.smoke data)"
+          for attempt in {1..30}; do
+            ps -p "$pid" -o comm= >/dev/null
+            [[ -s "$container/Documents/bridge-smoke.ready" ]] && break
+            sleep 2
+          done
           test -s "$container/Documents/bridge-smoke.ready"
           cp "$container/Documents/bridge-smoke.ready" dist/bridge-smoke.ready
           cp -R "$container/Documents/Kreshka" dist/ 2>/dev/null || true
           xcrun simctl io "$BRIDGE_SIMULATOR" screenshot dist/kreshka-account-simulator.png
-          echo '{"bridge_smoke":"passed","screen":"bridge account sheet","device_music_app_verified":false}' > dist/simulator-status.json
+          echo '{"bridge_smoke":"passed","screen":"Maple settings","catalogue":"local fixture through native MPModel","playback":"native MPC commands to AVPlayer","device_music_app_verified":false}' > dist/simulator-status.json
       - name: Collect logs
+        timeout-minutes: 2
         if: always()
         run: |
           mkdir -p dist

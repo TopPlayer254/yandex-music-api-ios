@@ -8,9 +8,11 @@
 #include <unistd.h>
 
 static char KreshkaIdentifierKey;
+static char KreshkaAccountButtonKey;
 static NSMutableDictionary<NSNumber *,NSString *> *libraryIdentifiers;
 static void KInstallModels(void);
 static void KLog(NSString *event);
+static void KBindNativeAccountButtons(UIView *view);
 // These are the only direct CoreAnalytics symbols imported by the pinned
 // original binary. Its CoreAnalytics load is redirected to this framework.
 __attribute__((visibility("default")))
@@ -65,6 +67,78 @@ static void KLog(NSString *event) {
 }
 static NSError *KError(NSString *description) {
     return [NSError errorWithDomain:@"dev.hikeri.kreshka.music.bridge" code:1 userInfo:@{NSLocalizedDescriptionKey:description}];
+}
+
+// The MPMediaLibrary provider boundary keeps metadata from opening Apple's
+// ML3 SQLite store inside the sideloaded application's unrelated container.
+@interface KreshkaLibraryProvider : NSObject
+@property(atomic,copy) NSDictionary *catalog;
+@end
+@implementation KreshkaLibraryProvider
+- (NSString *)uniqueIdentifier { return @"dev.hikeri.kreshka.music"; }
+- (NSString *)name { return @"Крешка"; }
+- (NSString *)syncValidity { return @"kreshka-library-1"; }
+- (NSString *)databasePath { return nil; }
+- (id)library { return nil; }
+- (id)artworkDataSource { return nil; }
+- (id)entityCache { return nil; }
+- (BOOL)requiresAuthentication { return NO; }
+- (NSDate *)lastModifiedDate { return NSDate.date; }
+- (BOOL)hasMediaOfType:(NSUInteger)type { return [self.catalog[@"tracks"] count]>0; }
+- (BOOL)itemExistsWithPersistentID:(uint64_t)identifier { return libraryIdentifiers[@(identifier)]!=nil; }
+- (BOOL)collectionExistsWithPersistentID:(uint64_t)identifier groupingType:(NSInteger)type { return libraryIdentifiers[@(identifier)]!=nil; }
+- (id)itemResultSetForQueryCriteria:(id)criteria { return nil; }
+- (id)collectionResultSetForQueryCriteria:(id)criteria { return nil; }
+- (void)loadQueryCriteria:(id)criteria countOfItemsWithCompletionBlock:(void(^)(NSUInteger))completion {
+    if (completion) completion([self.catalog[@"tracks"] count]);
+}
+- (void)loadQueryCriteria:(id)criteria countOfCollectionsWithCompletionBlock:(void(^)(NSUInteger))completion {
+    if (completion) completion([self.catalog[@"playlists"] count]);
+}
+- (void)loadQueryCriteria:(id)criteria hasItemsWithCompletionBlock:(void(^)(BOOL))completion {
+    if (completion) completion([self.catalog[@"tracks"] count]>0);
+}
+- (void)loadQueryCriteria:(id)criteria hasCollectionsWithCompletionBlock:(void(^)(BOOL))completion {
+    if (completion) completion([self.catalog[@"playlists"] count]>0);
+}
+- (void)loadProperties:(NSSet *)properties ofItemWithIdentifier:(int64_t)identifier completionBlock:(void(^)(NSDictionary *))completion {
+    if (completion) completion(@{});
+}
+- (void)loadProperties:(NSSet *)properties ofCollectionWithIdentifier:(int64_t)identifier groupingType:(NSInteger)type completionBlock:(void(^)(NSDictionary *))completion {
+    if (completion) completion(@{});
+}
+- (void)loadValueForAggregateFunction:(NSString *)function onItemsForProperty:(NSString *)property queryCriteria:(id)criteria completionBlock:(void(^)(id))completion {
+    if (completion) completion(nil);
+}
+- (void)loadValueForAggregateFunction:(NSString *)function onCollectionsForProperty:(NSString *)property queryCriteria:(id)criteria completionBlock:(void(^)(id))completion {
+    if (completion) completion(nil);
+}
+- (id)valueForDatabaseProperty:(NSString *)property {
+    return [NSUserDefaults.standardUserDefaults objectForKey:[@"kreshka-media-property:" stringByAppendingString:property]];
+}
+- (BOOL)setValue:(id)value forDatabaseProperty:(NSString *)property {
+    [NSUserDefaults.standardUserDefaults setObject:value forKey:[@"kreshka-media-property:" stringByAppendingString:property]]; return YES;
+}
+@end
+
+static KreshkaLibraryProvider *KLibraryProvider(void) {
+    static KreshkaLibraryProvider *provider; static dispatch_once_t once;
+    dispatch_once(&once,^{
+        provider=[KreshkaLibraryProvider new]; provider.catalog=@{};
+        for (NSString *name in @[@"MPMediaLibraryDataProvider",@"MPMediaLibraryDataProviderPrivate"]) {
+            Protocol *protocol=NSProtocolFromString(name); if (protocol) class_addProtocol(KreshkaLibraryProvider.class,protocol);
+        }
+    });
+    return provider;
+}
+static id KLocalLibrary(void) {
+    static id library; static dispatch_once_t once;
+    dispatch_once(&once,^{
+        id allocated=[NSClassFromString(@"MPMediaLibrary") alloc];
+        library=KCall1(allocated,@"_initWithLibraryDataProvider:",KLibraryProvider());
+        KLog([NSString stringWithFormat:@"isolated media library initialized=%d",library!=nil]);
+    });
+    return library;
 }
 static id KBackend(void) { return KCall0(NSClassFromString(@"KreshkaBackend"),@"sharedInstance"); }
 static void KExecute(NSString *action,NSDictionary *payload,void(^completion)(NSDictionary *,NSError *)) {
@@ -357,6 +431,15 @@ static void KRunCommands(NSArray *commands,NSUInteger index,NSMutableArray *stat
 }
 
 static void KInstallModels(void) {
+    Class accountClass=NSClassFromString(@"MusicApplication.AccountButton") ?: NSClassFromString(@"_TtC16MusicApplication13AccountButton");
+    Method accountMove=class_getInstanceMethod(accountClass,@selector(didMoveToWindow));
+    if (accountMove) {
+        IMP originalMove=method_getImplementation(accountMove);
+        KReplace(accountClass,@"didMoveToWindow",^(UIView *view){
+            ((void(*)(id,SEL))originalMove)(view,@selector(didMoveToWindow));
+            KBindNativeAccountButtons(view);
+        },2,"v");
+    }
     for (NSString *name in @[@"MPModelRequest",@"MPModelLibraryRequest",@"MPModelLibrarySearchRequest",@"MPModelStoreSearchRequest",@"MPModelStoreBrowseRequest"]) {
         KReplace(NSClassFromString(name),@"performWithResponseHandler:",^(id request,id completion){KModelRequest(request,completion);},3,"v");
         KReplace(NSClassFromString(name),@"responseWithCompletion:",^(id request,id completion){KModelRequest(request,completion);},3,"v");
@@ -400,6 +483,24 @@ static void KInstallModels(void) {
 }
 
 __attribute__((visibility("default"))) void KreshkaInstallAdapters(void) { KInstallModels(); }
+
+static void KBindNativeAccountButtons(UIView *view) {
+    NSString *name=NSStringFromClass(view.class);
+    if ([name containsString:@"MusicApplication"] && [name hasSuffix:@"AccountButton"]) {
+        if (!objc_getAssociatedObject(view,&KreshkaAccountButtonKey)) {
+            UIButton *button=[UIButton buttonWithType:UIButtonTypeCustom];
+            button.frame=view.bounds;
+            button.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+            button.accessibilityLabel=@"Учётная запись и настройки";
+            [button addTarget:KBackend() action:NSSelectorFromString(@"presentSettings") forControlEvents:UIControlEventTouchUpInside];
+            objc_setAssociatedObject(view,&KreshkaAccountButtonKey,button,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [view addSubview:button];
+            view.accessibilityElements=@[button];
+        }
+        return;
+    }
+    for (UIView *child in view.subviews) KBindNativeAccountButtons(child);
+}
 
 static BOOL KAppleHost(NSString *host) {
     host=host.lowercaseString;
@@ -501,6 +602,13 @@ static BOOL KAppleMusicURL(NSURL *url) {
         void(^handler)(NSInteger)=(void(^)(NSInteger))[completion copy];
         dispatch_async(dispatch_get_main_queue(),^{ if (handler) handler(3); });
     },3,"v");
+    for (NSString *selector in @[@"defaultMediaLibrary",@"deviceMediaLibrary"]) {
+        KReplace(mediaLibraryMeta,selector,^id(id cls){ return KLocalLibrary(); },2,"@");
+    }
+    KReplace(mediaLibraryMeta,@"deviceMediaLibraryWithUserIdentity:",^id(id cls,id identity){ return KLocalLibrary(); },3,"@");
+    KReplace(NSClassFromString(@"MPMediaLibrary"),@"initWithClientIdentity:userIdentity:",^id(id library,id client,id identity){
+        return KCall1(library,@"_initWithLibraryDataProvider:",KLibraryProvider());
+    },4,"@");
     [NSURLProtocol registerClass:KreshkaAppleProtocol.class];
     Class meta=object_getClass(NSURLSessionConfiguration.class);
     for (NSString *name in @[@"defaultSessionConfiguration",@"ephemeralSessionConfiguration"]) {
@@ -524,6 +632,11 @@ static BOOL KAppleMusicURL(NSURL *url) {
     }];
     [NSNotificationCenter.defaultCenter addObserverForName:@"KreshkaCatalogChanged" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification){
         [NSNotificationCenter.defaultCenter postNotificationName:@"MPMediaLibraryDidChangeNotification" object:nil];
+        KExecute(@"catalog",@{},^(NSDictionary *catalog,NSError *error){
+            if (error) return;
+            KLibraryProvider().catalog=catalog;
+            [NSNotificationCenter.defaultCenter postNotificationName:@"MPMediaLibraryDidChangeNotification" object:KLocalLibrary()];
+        });
     }];
     Method present=class_getInstanceMethod(UIViewController.class,@selector(presentViewController:animated:completion:));
     IMP originalPresent=method_getImplementation(present);
@@ -563,12 +676,7 @@ static BOOL KAppleMusicURL(NSURL *url) {
             return;
         }
         KInstallModels();
-        NSString *name=NSStringFromClass(controller.class);
-        if (([name containsString:@"MusicApplication"] || [name hasPrefix:@"Music"]) && controller.navigationController.topViewController==controller) {
-            UIBarButtonItem *settings=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape"] style:UIBarButtonItemStylePlain target:KBackend() action:NSSelectorFromString(@"presentSettings")];
-            settings.accessibilityLabel=@"Настройки";
-            controller.navigationItem.rightBarButtonItem=settings;
-        }
+        KBindNativeAccountButtons(controller.view);
     },3,"v");
     KLog(@"runtime adapter loaded");
 }

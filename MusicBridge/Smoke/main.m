@@ -2,6 +2,7 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <dlfcn.h>
+#include <unistd.h>
 
 static id backend;
 static BOOL callbackLifetimePassed=NO;
@@ -22,6 +23,37 @@ static id Change(id command) {
     id allocated=[NSClassFromString(@"MPCPlayerChangeRequest") alloc];
     return ((id(*)(id,SEL,id))objc_msgSend)(allocated,NSSelectorFromString(@"initWithCommandRequests:"),@[command]);
 }
+static Class FixtureClass(Class parent,const char *name) {
+    Class cls=NSClassFromString(@(name));
+    if (!cls) { cls=objc_allocateClassPair(parent,name,0); objc_registerClassPair(cls); }
+    return cls;
+}
+static void VerifyLocalLibrary(void) {
+    Class libraryClass=NSClassFromString(@"MPMediaLibrary");
+    NSArray *saved=[NSUserDefaults.standardUserDefaults objectForKey:@"AppleLanguages"];
+    for (NSArray *languages in @[@[@"ru",@"en"],@[@"en",@"ru"]]) {
+        [NSUserDefaults.standardUserDefaults setObject:languages forKey:@"AppleLanguages"];
+        id library=Call(libraryClass,@"defaultMediaLibrary");
+        Check(library!=nil,@"local library initialization failed");
+        Check([Call(library,@"uniqueIdentifier") isEqual:@"dev.hikeri.kreshka.music"],@"library namespace not isolated");
+        Check([NSStringFromClass([Call(library,@"libraryDataProvider") class]) isEqual:@"KreshkaLibraryProvider"],@"library still opens ML3");
+    }
+    [NSUserDefaults.standardUserDefaults setObject:saved forKey:@"AppleLanguages"];
+    NSLog(@"KRESHKA_LOCALIZED_LIBRARY_INITIALIZATION_PASSED");
+}
+static void VerifyToolbar(void) {
+    UIViewController *controller=[FixtureClass(UIViewController.class,"MusicApplication.KreshkaToolbarTestController") new];
+    UINavigationController *navigation=[[UINavigationController alloc] initWithRootViewController:controller];
+    UIBarButtonItem *sort=[[UIBarButtonItem alloc] initWithTitle:@"Сортировка" style:UIBarButtonItemStylePlain target:nil action:nil];
+    UIBarButtonItem *folder=[[UIBarButtonItem alloc] initWithTitle:@"Папка" style:UIBarButtonItemStylePlain target:nil action:nil];
+    controller.navigationItem.rightBarButtonItems=@[sort,folder];
+    UIView *account=[[FixtureClass(UIView.class,"_TtC16MusicApplication13AccountButton") alloc] initWithFrame:CGRectMake(0,0,44,44)];
+    [controller.view addSubview:account];
+    [controller viewDidAppear:NO];
+    Check(navigation.topViewController==controller && [controller.navigationItem.rightBarButtonItems isEqual:@[sort,folder]],@"native toolbar items replaced");
+    Check([account.subviews.lastObject isKindOfClass:UIButton.class],@"native profile button not bound");
+    NSLog(@"KRESHKA_NATIVE_TOOLBAR_PRESERVED_PASSED");
+}
 static void Finish(UIViewController *root) {
     Check(callbackLifetimePassed,@"callback did not retain captures");
     ((void(*)(id,SEL))objc_msgSend)(backend,NSSelectorFromString(@"presentSettings"));
@@ -35,9 +67,8 @@ static void Finish(UIViewController *root) {
     });
 }
 static void VerifyOnboarding(UIViewController *root) {
-    const char *name="_TtC16MusicApplication24JSWhatsNewViewController";
-    Class cls=NSClassFromString(@(name));
-    if (!cls) { cls=objc_allocateClassPair(UIViewController.class,name,0); objc_registerClassPair(cls); }
+    VerifyToolbar();
+    Class cls=FixtureClass(UIViewController.class,"_TtC16MusicApplication24JSWhatsNewViewController");
     __block NSUInteger completed=0;
     for (NSUInteger i=0;i<3;i++) {
         [root presentViewController:[cls new] animated:NO completion:^{
@@ -51,6 +82,11 @@ static void VerifyOnboarding(UIViewController *root) {
 }
 static void VerifyPlayback(id identifiers,UIViewController *root) {
     Check(NSClassFromString(@"MPCPlayerChangeRequest")!=Nil,@"native MPC framework unavailable");
+    Class pathClass=NSClassFromString(@"MPCPlayerPath");
+    id path=((id(*)(id,SEL,id,id,int,id))objc_msgSend)([pathClass alloc],
+        NSSelectorFromString(@"initWithDeviceUID:bundleID:pid:playerID:"),nil,@"com.apple.Music",getpid(),nil);
+    Check([Call(path,@"bundleID") isEqual:NSBundle.mainBundle.bundleIdentifier],@"native session still targets Apple Music");
+    NSLog(@"KRESHKA_PLAYER_SESSION_REDIRECTION_PASSED");
     id request=Change(Command(125,identifiers));
     void(^played)(NSArray *)=^(NSArray *statuses){
         Check(statuses.count==1 && Call(statuses.firstObject,@"error")==nil,@"native Play failed");
@@ -102,6 +138,7 @@ static void VerifyCatalogue(UIViewController *root) {
     NSString *framework=[NSBundle.mainBundle.privateFrameworksPath stringByAppendingPathComponent:@"KreshkaBridge.framework/KreshkaBridge"];
     void *handle=dlopen(framework.UTF8String,RTLD_NOW);
     if (!handle) { NSLog(@"KRESHKA_SMOKE_FAILED %s",dlerror()); abort(); }
+    VerifyLocalLibrary();
     UIViewController *root=[UIViewController new];
     root.view.backgroundColor=UIColor.systemBackgroundColor;
     self.window=[[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
