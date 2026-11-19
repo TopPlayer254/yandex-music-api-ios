@@ -5,6 +5,7 @@ on:
     branches: [codex/kreshka-music-bridge]
     paths:
       - MusicBridge/KreshkaBackend.swift
+      - MusicBridge/LibraryAuthorization.swift
       - MusicBridge/RuntimeAdapter.m
       - MusicBridge/project.yml
       - MusicBridge/Extract/**
@@ -114,6 +115,15 @@ jobs:
           xcrun simctl install "$BRIDGE_SIMULATOR" "$helper"
           codesign --force --deep --sign - "$app"
           xcrun simctl install "$BRIDGE_SIMULATOR" "$app"
+          xcrun simctl privacy "$BRIDGE_SIMULATOR" reset media-library dev.hikeri.kreshka.music.smoke
+          first_launch="$(xcrun simctl launch --terminate-running-process "$BRIDGE_SIMULATOR" dev.hikeri.kreshka.music.smoke)"
+          first_pid="${first_launch##*: }"
+          sleep 6
+          ps -p "$first_pid" -o comm= >/dev/null
+          container="$(xcrun simctl get_app_container "$BRIDGE_SIMULATOR" dev.hikeri.kreshka.music.smoke data)"
+          test ! -s "$container/Documents/bridge-smoke.ready"
+          xcrun simctl io "$BRIDGE_SIMULATOR" screenshot dist/clean-install-authorization.png
+          xcrun simctl terminate "$BRIDGE_SIMULATOR" dev.hikeri.kreshka.music.smoke
           xcrun simctl privacy "$BRIDGE_SIMULATOR" grant media-library dev.hikeri.kreshka.music.smoke
           launch="$(xcrun simctl launch --terminate-running-process "$BRIDGE_SIMULATOR" dev.hikeri.kreshka.music.smoke)"
           echo "$launch"

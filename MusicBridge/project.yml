@@ -17,6 +17,7 @@ targets:
     platform: iOS
     sources:
       - path: KreshkaBackend.swift
+      - path: LibraryAuthorization.swift
       - path: RuntimeAdapter.m
       - path: ../MapleMusic/Resources/DemoAudio
         type: folder
@@ -57,9 +58,16 @@ targets:
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         NSAppleMusicUsageDescription: Проверка адаптера интерфейса.
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: BridgeSmoke
+                UISceneDelegateClassName: SmokeSceneDelegate
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.hikeri.kreshka.music.smoke
+        SWIFT_OBJC_BRIDGING_HEADER: Smoke/BridgeSmoke.h
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
     scheme: {}
   MusicPresenceFixture:

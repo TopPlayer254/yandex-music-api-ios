@@ -116,6 +116,7 @@ final class KreshkaBackend: NSObject, ObservableObject {
         // Native screens request the library during launch, before Keychain
         // restoration has completed. Do not cache an unauthorized response then.
         await bootstrapTask?.value
+        if action == "readyState" { return (snapshot as? [String: Any]) ?? [:] }
         guard signedIn else { throw MusicServiceError.unauthorized }
         let service = container.service
         switch action {

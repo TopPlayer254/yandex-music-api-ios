@@ -181,7 +181,6 @@ static void VerifyCatalogue(UIViewController *root) {
 }
 
 @interface SmokeDelegate : UIResponder <UIApplicationDelegate>
-@property(nonatomic,strong) UIWindow *window;
 @end
 @implementation SmokeDelegate
 - (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)options {
@@ -191,9 +190,21 @@ static void VerifyCatalogue(UIViewController *root) {
     void *handle=dlopen(framework.UTF8String,RTLD_NOW);
     if (!handle) { NSLog(@"KRESHKA_SMOKE_FAILED %s",dlerror()); abort(); }
     VerifyLocalLibrary();
+    return YES;
+}
+@end
+
+@interface SmokeSceneDelegate : NSObject <UIWindowSceneDelegate>
+@property(nonatomic,strong) UIWindow *window;
+@end
+@implementation SmokeSceneDelegate
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    Class authorization=NSClassFromString(@"KreshkaLibraryAuthorization");
+    Check(authorization && ((BOOL(*)(id,SEL))objc_msgSend)(authorization,NSSelectorFromString(@"isReady")),@"native scene connected before genuine authorization");
+    NSLog(@"KRESHKA_SCENE_AUTHORIZATION_GATE_PASSED");
     UIViewController *root=[UIViewController new];
     root.view.backgroundColor=UIColor.systemBackgroundColor;
-    self.window=[[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    self.window=[[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.window.rootViewController=root;
     [self.window makeKeyAndVisible];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),dispatch_get_main_queue(),^{
@@ -201,7 +212,6 @@ static void VerifyCatalogue(UIViewController *root) {
         Check(backend!=nil,@"backend missing");
         VerifyCatalogue(root);
     });
-    return YES;
 }
 @end
 int main(int argc,char **argv) {

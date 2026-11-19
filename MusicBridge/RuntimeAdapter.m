@@ -13,6 +13,7 @@ static NSMutableDictionary<NSNumber *,NSString *> *libraryIdentifiers;
 static void KInstallModels(void);
 static void KLog(NSString *event);
 static void KBindNativeAccountButtons(UIView *view);
+static void KInstallSceneAuthorization(void);
 static NSString *KLibraryIdentifier(NSNumber *persistentID) {
     @synchronized (libraryIdentifiers) { return libraryIdentifiers[persistentID]; }
 }
@@ -483,6 +484,7 @@ static void KCreatePlaylist(id operation) {
 }
 
 static void KInstallModels(void) {
+    KInstallSceneAuthorization();
     for (NSString *name in @[@"MPModelLibraryPlaylistEditChangeRequestOperation",@"MPModelLibrarySDKPlaylistEditChangeRequestOperation"]) {
         KReplace(NSClassFromString(name),@"execute",^(id operation){ KCreatePlaylist(operation); },2,"v");
     }
@@ -534,6 +536,37 @@ static void KInstallModels(void) {
                 });
             },2,"v");
         }
+    }
+}
+
+static void KInstallSceneAuthorization(void) {
+    NSMutableArray *names=[@[@"_TtC5Music17MainSceneDelegate",@"_TtC5Music20CarPlaySceneDelegate"] mutableCopy];
+    if ([NSBundle.mainBundle.bundleIdentifier hasSuffix:@".smoke"]) [names addObject:@"SmokeSceneDelegate"];
+    SEL selector=NSSelectorFromString(@"scene:willConnectToSession:options:");
+    for (NSString *name in names) {
+        Class cls=NSClassFromString(name);
+        Method method=class_getInstanceMethod(cls,selector);
+        if (!method) continue;
+        // Keep the actual scene delegate and its original UI. Only defer its
+        // construction until the SDK has completed its genuine permission flow.
+        NSString *key=[NSString stringWithFormat:@"%@/%@",name,NSStringFromSelector(selector)];
+        if ([installedHooks containsObject:key]) continue;
+        IMP original=method_getImplementation(method);
+        KReplace(cls,NSStringFromSelector(selector),^(id delegate,UIScene *scene,id session,id options){
+            Class authorization=NSClassFromString(@"KreshkaLibraryAuthorization");
+            SEL connect=NSSelectorFromString(@"connectScene:completion:");
+            if (![scene isKindOfClass:UIWindowScene.class] || ![authorization respondsToSelector:connect]) {
+                KLog(@"scene authorization gate unavailable; native library UI was not constructed");
+                return;
+            }
+            KLog(@"waiting for genuine MusicKit authorization before connecting native scene");
+            void(^ready)(void)=^{
+                KLog(@"connecting authorized native scene");
+                ((void(*)(id,SEL,id,id,id))original)(delegate,selector,scene,session,options);
+                [NSNotificationCenter.defaultCenter postNotificationName:@"KreshkaNativeSceneConnected" object:scene];
+            };
+            ((void(*)(id,SEL,id,id))objc_msgSend)(authorization,connect,scene,[ready copy]);
+        },5,"v");
     }
 }
 
@@ -649,14 +682,13 @@ static BOOL KAppleMusicURL(NSURL *url) {
 + (void)load {
     installedHooks=[NSMutableSet new];
     libraryIdentifiers=[NSMutableDictionary new];
-    // Authorization here refers to the bridge's catalogue. No request for the
-    // user's Apple Music/media-library data is needed by our providers.
+    // Do not spoof authorization. MusicKitInternal also requires the SDK's
+    // initialized library storage, which a synthetic "authorized" status lacks.
     Class mediaLibraryMeta=object_getClass(NSClassFromString(@"MPMediaLibrary"));
-    KReplace(mediaLibraryMeta,@"authorizationStatus",^NSInteger(id cls){ return 3; },2,"q");
-    KReplace(mediaLibraryMeta,@"requestAuthorization:",^(id cls,id completion){
-        void(^handler)(NSInteger)=(void(^)(NSInteger))[completion copy];
-        dispatch_async(dispatch_get_main_queue(),^{ if (handler) handler(3); });
-    },3,"v");
+    KInstallSceneAuthorization();
+    [NSNotificationCenter.defaultCenter addObserverForName:@"KreshkaLibraryAuthorizationChanged" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification){
+        KLog([NSString stringWithFormat:@"MusicKit authorization %@",notification.object]);
+    }];
     for (NSString *selector in @[@"defaultMediaLibrary",@"deviceMediaLibrary"]) {
         KReplace(mediaLibraryMeta,selector,^id(id cls){ return KLocalLibrary(); },2,"@");
     }
@@ -696,8 +728,12 @@ static BOOL KAppleMusicURL(NSURL *url) {
         KInstallModels();
         KExecute(@"state",@{},^(NSDictionary *state,NSError *error){
             KLog([NSString stringWithFormat:@"bridge ready provider=%@ signedIn=%@",state[@"provider"],state[@"signedIn"]]);
-            if (![state[@"signedIn"] boolValue] && ![NSBundle.mainBundle.bundleIdentifier hasSuffix:@".smoke"]) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),dispatch_get_main_queue(),^{KSend0(KBackend(),@"presentAccount");});
+        });
+    }];
+    [NSNotificationCenter.defaultCenter addObserverForName:@"KreshkaNativeSceneConnected" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification){
+        KExecute(@"readyState",@{},^(NSDictionary *state,NSError *error){
+            if (!error && ![state[@"signedIn"] boolValue] && ![NSBundle.mainBundle.bundleIdentifier hasSuffix:@".smoke"]) {
+                dispatch_async(dispatch_get_main_queue(),^{KSend0(KBackend(),@"presentAccount");});
             }
         });
     }];

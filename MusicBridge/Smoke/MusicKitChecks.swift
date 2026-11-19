@@ -4,10 +4,20 @@ import MusicKit
 @MainActor
 @objc(KreshkaMusicKitChecks)
 final class MusicKitChecks: NSObject {
+    private static var autoupdatingResponses: [AnyObject] = []
     @objc(run:)
     static func run(_ completion: @escaping (NSError?) -> Void) {
         Task {
             do {
+                guard await MusicAuthorization.request() == .authorized else {
+                    throw failure("Genuine MusicKit authorization was not granted")
+                }
+                NSLog("KRESHKA_GENUINE_MUSICKIT_AUTHORIZATION_PASSED")
+                // This is the actual private getter on the device crash path,
+                // rather than only the public request/response conversion.
+                try verifyAutoupdating(MusicLibraryRequest<MusicKit.Song>())
+                try verifyAutoupdating(MusicLibraryRequest<MusicKit.Playlist>())
+                NSLog("KRESHKA_NATIVE_AUTOUPDATING_INITIALIZATION_PASSED")
                 let songs = try await MusicLibraryRequest<MusicKit.Song>().response()
                 guard !songs.items.isEmpty else { throw failure("MusicKit dropped every song") }
                 for song in songs.items {
@@ -39,5 +49,14 @@ final class MusicKitChecks: NSObject {
 
     private static func failure(_ reason: String) -> NSError {
         NSError(domain: "KreshkaMusicKitCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: reason])
+    }
+
+    private static func verifyAutoupdating<Request>(_ value: Request) throws {
+        var request = value
+        let metadata = unsafeBitCast(Request.self, to: UnsafeRawPointer.self)
+        guard let pointer = withUnsafePointer(to: &request, {
+            KreshkaMakeAutoupdatingResponse($0, metadata)
+        }) else { throw failure("Native MusicKit autoupdating ABI unavailable") }
+        autoupdatingResponses.append(Unmanaged<AnyObject>.fromOpaque(pointer).takeRetainedValue())
     }
 }
