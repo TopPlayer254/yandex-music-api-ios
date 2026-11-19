@@ -28,6 +28,31 @@ static Class FixtureClass(Class parent,const char *name) {
     if (!cls) { cls=objc_allocateClassPair(parent,name,0); objc_registerClassPair(cls); }
     return cls;
 }
+static void VerifyContentGroupFiltering(BOOL populated) {
+    id library=Call(NSClassFromString(@"MPMediaLibrary"),@"defaultMediaLibrary");
+    id provider=Call(library,@"libraryDataProvider");
+    SEL selector=NSSelectorFromString(@"filterAvailableContentGroups:withOptions:");
+    Check([library respondsToSelector:selector],@"native content-group API missing");
+    if (!populated) {
+        Check(Call(provider,@"databasePath")==nil,@"regression requires a provider without an ML3 path");
+        for (NSNumber *options in @[@0,@1,@2,@NSUIntegerMax]) {
+            NSUInteger result=((NSUInteger(*)(id,SEL,NSUInteger,NSUInteger))objc_msgSend)(library,selector,NSUIntegerMax,options.unsignedIntegerValue);
+            Check(result==0,@"empty library exposes content groups");
+        }
+    } else {
+        // A fixture held on a second thread reproduces the crash's background
+        // call path while native model/playback tests continue on the main queue.
+        dispatch_sync(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE,0),^{
+            NSUInteger groups=((NSUInteger(*)(id,SEL))objc_msgSend)(provider,NSSelectorFromString(@"availableContentGroups"));
+            Check((groups & 0x80)!=0,@"populated catalogue does not expose songs");
+            for (NSNumber *mask in @[@0,@1,@2,@0x40,@0x80,@NSUIntegerMax]) {
+                NSUInteger result=((NSUInteger(*)(id,SEL,NSUInteger,NSUInteger))objc_msgSend)(library,selector,mask.unsignedIntegerValue,2);
+                Check(result==(mask.unsignedIntegerValue & groups),@"content-group filtering ignores requested mask");
+            }
+        });
+    }
+    NSLog(@"KRESHKA_CONTENT_GROUP_FILTER_PASSED populated=%d",populated);
+}
 static void VerifyLocalLibrary(void) {
     Class libraryClass=NSClassFromString(@"MPMediaLibrary");
     NSArray *saved=[NSUserDefaults.standardUserDefaults objectForKey:@"AppleLanguages"];
@@ -39,6 +64,7 @@ static void VerifyLocalLibrary(void) {
         Check([NSStringFromClass([Call(library,@"libraryDataProvider") class]) isEqual:@"KreshkaLibraryProvider"],@"library still opens ML3");
     }
     [NSUserDefaults.standardUserDefaults setObject:saved forKey:@"AppleLanguages"];
+    VerifyContentGroupFiltering(NO);
     NSLog(@"KRESHKA_LOCALIZED_LIBRARY_INITIALIZATION_PASSED");
 }
 static void VerifyToolbar(void) {
@@ -123,6 +149,11 @@ static void VerifyCatalogue(UIViewController *root) {
         id identifiers=[Call(song,@"identifiers") copy];
         Check([Call(identifiers,@"contentItemID") hasPrefix:@"kr:"],@"identity lost during copy");
         NSLog(@"KRESHKA_NATIVE_CATALOG_PASSED count=%lu",(unsigned long)songs.count);
+        // Update the provider snapshot deterministically: native startup asks
+        // for counts before the asynchronous catalogue-change observer runs.
+        id provider=Call(Call(NSClassFromString(@"MPMediaLibrary"),@"defaultMediaLibrary"),@"libraryDataProvider");
+        [provider setValue:@{@"tracks":@[@{}],@"albums":@[@{}],@"artists":@[@{}],@"playlists":@[@{}]} forKey:@"catalog"];
+        VerifyContentGroupFiltering(YES);
         VerifyPlayback(identifiers,root);
     };
     ((void(*)(id,SEL,void *))objc_msgSend)(request,NSSelectorFromString(@"performWithResponseHandler:"),(__bridge void *)callback);

@@ -76,6 +76,7 @@ static NSError *KError(NSString *description) {
 // ML3 SQLite store inside the sideloaded application's unrelated container.
 @interface KreshkaLibraryProvider : NSObject
 @property(atomic,copy) NSDictionary *catalog;
+- (NSUInteger)availableContentGroups;
 @end
 @implementation KreshkaLibraryProvider
 - (NSString *)uniqueIdentifier { return @"dev.hikeri.kreshka.music"; }
@@ -86,6 +87,17 @@ static NSError *KError(NSString *description) {
 - (id)artworkDataSource { return nil; }
 - (id)entityCache { return nil; }
 - (BOOL)requiresAuthentication { return NO; }
+- (NSUInteger)availableContentGroups {
+    // MP content-group bits: albums, artists, playlists, songs. These values
+    // describe our catalogue; they do not require an ML3/MediaLibraryCore view.
+    NSDictionary *catalog=self.catalog;
+    NSUInteger groups=0;
+    if ([catalog[@"albums"] count]) groups|=0x1;
+    if ([catalog[@"artists"] count]) groups|=0x2;
+    if ([catalog[@"playlists"] count]) groups|=0x40;
+    if ([catalog[@"tracks"] count]) groups|=0x80;
+    return groups;
+}
 - (NSDate *)lastModifiedDate { return NSDate.date; }
 - (BOOL)hasMediaOfType:(NSUInteger)type { return [self.catalog[@"tracks"] count]>0; }
 - (BOOL)itemExistsWithPersistentID:(uint64_t)identifier { return KLibraryIdentifier(@(identifier))!=nil; }
@@ -612,6 +624,22 @@ static BOOL KAppleMusicURL(NSURL *url) {
     KReplace(NSClassFromString(@"MPMediaLibrary"),@"initWithClientIdentity:userIdentity:",^id(id library,id client,id identity){
         return KCall1(library,@"_initWithLibraryDataProvider:",KLibraryProvider());
     },4,"@");
+    // The original Music launch path calls this even before it asks for songs.
+    // Its implementation constructs MPMediaLibraryView and then an ML3 core
+    // library from databasePath. Our provider deliberately has no Apple DB.
+    Class mediaLibraryClass=NSClassFromString(@"MPMediaLibrary");
+    SEL groupsSelector=NSSelectorFromString(@"filterAvailableContentGroups:withOptions:");
+    Method groupsMethod=class_getInstanceMethod(mediaLibraryClass,groupsSelector);
+    if (groupsMethod) {
+        IMP originalGroups=method_getImplementation(groupsMethod);
+        KReplace(mediaLibraryClass,NSStringFromSelector(groupsSelector),^NSUInteger(id library,NSUInteger requested,NSUInteger options){
+            id provider=KCall0(library,@"libraryDataProvider");
+            if ([provider isKindOfClass:KreshkaLibraryProvider.class]) {
+                return requested & [(KreshkaLibraryProvider *)provider availableContentGroups];
+            }
+            return ((NSUInteger(*)(id,SEL,NSUInteger,NSUInteger))originalGroups)(library,groupsSelector,requested,options);
+        },4,"Q");
+    }
     [NSURLProtocol registerClass:KreshkaAppleProtocol.class];
     Class meta=object_getClass(NSURLSessionConfiguration.class);
     for (NSString *name in @[@"defaultSessionConfiguration",@"ephemeralSessionConfiguration"]) {
