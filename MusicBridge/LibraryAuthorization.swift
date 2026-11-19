@@ -32,6 +32,11 @@ final class LibraryAuthorization: NSObject {
     }
 
     fileprivate static func authorized() { isReady = true }
+
+    @objc(disconnectScene:)
+    static func disconnect(scene: UIWindowScene) {
+        sessions.removeValue(forKey: ObjectIdentifier(scene))?.cancel()
+    }
 }
 
 @MainActor
@@ -52,6 +57,7 @@ private final class LibraryAuthorizationSession: ObservableObject {
             // Always use the SDK request, including on subsequent launches with
             // permission already granted. It also initializes MusicKit storage.
             let status = await MusicAuthorization.request()
+            guard !finished else { return }
             requesting = false
             let allowed = status == .authorized
             NotificationCenter.default.post(name: .init("KreshkaLibraryAuthorizationChanged"), object: allowed ? "authorized" : "denied")
@@ -61,6 +67,13 @@ private final class LibraryAuthorizationSession: ObservableObject {
             finished = true
             completion()
         }
+    }
+
+    func cancel() {
+        finished = true
+        window?.isHidden = true
+        window?.rootViewController = nil
+        window = nil
     }
 }
 

@@ -198,6 +198,14 @@ static void VerifyCatalogue(UIViewController *root) {
 @property(nonatomic,strong) UIWindow *window;
 @end
 @implementation SmokeSceneDelegate
+- (void)sceneWillEnterForeground:(UIScene *)scene {
+    Check(self.window!=nil,@"foreground callback reached an unconnected native scene");
+    NSLog(@"KRESHKA_AUTHORIZED_SCENE_FOREGROUND_PASSED");
+}
+- (void)sceneDidBecomeActive:(UIScene *)scene {
+    Check(self.window!=nil,@"active callback reached an unconnected native scene");
+    NSLog(@"KRESHKA_AUTHORIZED_SCENE_ACTIVE_PASSED");
+}
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     Class authorization=NSClassFromString(@"KreshkaLibraryAuthorization");
     Check(authorization && ((BOOL(*)(id,SEL))objc_msgSend)(authorization,NSSelectorFromString(@"isReady")),@"native scene connected before genuine authorization");

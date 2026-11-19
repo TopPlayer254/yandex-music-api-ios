@@ -9,6 +9,8 @@
 
 static char KreshkaIdentifierKey;
 static char KreshkaAccountButtonKey;
+static char KreshkaSceneConnectionKey;
+static char KreshkaScenePhaseKey;
 static NSMutableDictionary<NSNumber *,NSString *> *libraryIdentifiers;
 static void KInstallModels(void);
 static void KLog(NSString *event);
@@ -540,7 +542,7 @@ static void KInstallModels(void) {
 }
 
 static void KInstallSceneAuthorization(void) {
-    NSMutableArray *names=[@[@"_TtC5Music17MainSceneDelegate",@"_TtC5Music20CarPlaySceneDelegate"] mutableCopy];
+    NSMutableArray *names=[@[@"_TtC5Music17MainSceneDelegate"] mutableCopy];
     if ([NSBundle.mainBundle.bundleIdentifier hasSuffix:@".smoke"]) [names addObject:@"SmokeSceneDelegate"];
     SEL selector=NSSelectorFromString(@"scene:willConnectToSession:options:");
     for (NSString *name in names) {
@@ -553,6 +555,7 @@ static void KInstallSceneAuthorization(void) {
         if ([installedHooks containsObject:key]) continue;
         IMP original=method_getImplementation(method);
         KReplace(cls,NSStringFromSelector(selector),^(id delegate,UIScene *scene,id session,id options){
+            objc_setAssociatedObject(delegate,&KreshkaSceneConnectionKey,@0,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             Class authorization=NSClassFromString(@"KreshkaLibraryAuthorization");
             SEL connect=NSSelectorFromString(@"connectScene:completion:");
             if (![scene isKindOfClass:UIWindowScene.class] || ![authorization respondsToSelector:connect]) {
@@ -561,12 +564,52 @@ static void KInstallSceneAuthorization(void) {
             }
             KLog(@"waiting for genuine MusicKit authorization before connecting native scene");
             void(^ready)(void)=^{
+                if ([objc_getAssociatedObject(delegate,&KreshkaSceneConnectionKey) integerValue]==2) return;
                 KLog(@"connecting authorized native scene");
+                objc_setAssociatedObject(delegate,&KreshkaSceneConnectionKey,@1,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                 ((void(*)(id,SEL,id,id,id))original)(delegate,selector,scene,session,options);
+                NSString *phase=objc_getAssociatedObject(delegate,&KreshkaScenePhaseKey);
+                objc_setAssociatedObject(delegate,&KreshkaScenePhaseKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                if ([phase isEqual:@"sceneDidBecomeActive:"] || [phase isEqual:@"sceneWillEnterForeground:"] || [phase isEqual:@"sceneWillResignActive:"])
+                    KSend1(delegate,@"sceneWillEnterForeground:",scene);
+                if ([phase isEqual:@"sceneDidBecomeActive:"] || [phase isEqual:@"sceneWillResignActive:"])
+                    KSend1(delegate,@"sceneDidBecomeActive:",scene);
+                if ([phase isEqual:@"sceneWillResignActive:"] || [phase isEqual:@"sceneDidEnterBackground:"])
+                    KSend1(delegate,phase,scene);
                 [NSNotificationCenter.defaultCenter postNotificationName:@"KreshkaNativeSceneConnected" object:scene];
             };
             ((void(*)(id,SEL,id,id))objc_msgSend)(authorization,connect,scene,[ready copy]);
         },5,"v");
+        for (NSString *event in @[@"sceneWillEnterForeground:",@"sceneDidBecomeActive:",@"sceneWillResignActive:",@"sceneDidEnterBackground:",@"sceneDidDisconnect:"]) {
+            SEL lifecycle=NSSelectorFromString(event);
+            Method lifecycleMethod=class_getInstanceMethod(cls,lifecycle);
+            if (!lifecycleMethod) continue;
+            IMP originalLifecycle=method_getImplementation(lifecycleMethod);
+            KReplace(cls,event,^(id delegate,UIScene *scene){
+                NSNumber *state=objc_getAssociatedObject(delegate,&KreshkaSceneConnectionKey);
+                if ([event isEqual:@"sceneDidDisconnect:"]) {
+                    if (state.integerValue==1) ((void(*)(id,SEL,id))originalLifecycle)(delegate,lifecycle,scene);
+                    objc_setAssociatedObject(delegate,&KreshkaSceneConnectionKey,@2,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    objc_setAssociatedObject(delegate,&KreshkaScenePhaseKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    KSend1(NSClassFromString(@"KreshkaLibraryAuthorization"),@"disconnectScene:",scene);
+                } else if (state && state.integerValue!=1) {
+                    // Remember the latest phase, without retaining an unbounded
+                    // queue while the permission sheet or Settings is open.
+                    objc_setAssociatedObject(delegate,&KreshkaScenePhaseKey,event,OBJC_ASSOCIATION_COPY_NONATOMIC);
+                } else ((void(*)(id,SEL,id))originalLifecycle)(delegate,lifecycle,scene);
+            },3,"v");
+        }
+        NSString *geometryName=@"windowScene:didUpdateEffectiveGeometry:";
+        SEL geometry=NSSelectorFromString(geometryName);
+        Method geometryMethod=class_getInstanceMethod(cls,geometry);
+        if (geometryMethod) {
+            IMP originalGeometry=method_getImplementation(geometryMethod);
+            KReplace(cls,geometryName,^(id delegate,id scene,id value){
+                NSNumber *state=objc_getAssociatedObject(delegate,&KreshkaSceneConnectionKey);
+                if (!state || state.integerValue==1)
+                    ((void(*)(id,SEL,id,id))originalGeometry)(delegate,geometry,scene,value);
+            },4,"v");
+        }
     }
 }
 
