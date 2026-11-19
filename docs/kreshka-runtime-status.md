@@ -66,6 +66,40 @@ named `Music`; executable filenames do not determine the Home Screen label.
 
 ## Verification limits
 
+The subsequent device recording still showed empty native lists/home, failed
+playlist creation, recurring onboarding and a queue crash. A later crash report
+(`233616`) contains a Swift assertion in MusicKit while processing a collection;
+its faulting stack is not a UIKit presentation stack. Model identifiers now use
+concrete song/album/artist/playlist kinds. The public MusicKit conversion checks
+pass, but this crash hypothesis still needs a device confirmation before the
+reported failure is called fixed.
+
+Native playlist-edit operations now delegate creation to the existing Yandex
+service. The expanded regression test exercises the SDK operation and public
+MusicLibraryRequest APIs, including item IDs. Earlier tests only checked the
+MPModel response objects and missed this conversion boundary.
+
+The clean simulator initially denied media-library permission; granting it then
+revealed MusicKit's check for an installed com.apple.Music app. The user's device
+does have the stock application. A separate simulator-only presence fixture
+supplies the missing installed-app dependency; it has no Apple UI, catalogue or
+playback implementation and is excluded from the device framework/IPA.
+
+The Debug simulator run for source `8605e36` completed successfully:
+[GitHub Actions run 44616015989](https://github.com/TopPlayer254/yandex-music-api-ios/actions/runs/44616015989).
+The downloaded diagnostics artifact `14576592548` contains the ready flag,
+settings screenshot and explicit passing markers for public MusicKit song,
+artist, album and playlist IDs; native SDK playlist creation; MPC Play/Pause;
+library content-group filtering; callback lifetime; toolbar preservation; and
+onboarding/settings fixtures. The service is a local fixture, so native playlist
+creation here verifies routing and callback ABI, not a write to Yandex.
+
+Fix 6 device IPA SHA-256:
+`35e16ca3e5b8a78aa756e90f8d588584618a01729cfcfbfab8ceb68490d3aa14`.
+Its main executable retains 138 unique library dependencies, one bridge load,
+the real arm64e framework, and the updated name in all 55 localized entries.
+The simulator presence fixture is not packaged in the IPA.
+
 The downloaded iPhone executable is arm64e and cannot run as an Intel Simulator
 application. The available simulator runtime has no original Music.app. Simulator
 screenshots therefore show the bridge settings sheet, not the original Music UI.
