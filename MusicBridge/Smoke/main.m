@@ -118,7 +118,7 @@ static void VerifyPlaylistCreation(void(^completion)(void)) {
         completion();
     };
     id operation=((id(*)(id,SEL,id,id))objc_msgSend)(request,
-        NSSelectorFromString(@"newOperationWithLocalPersistenceResponseHandler:completeResponseHandler:"),nil,response);
+        NSSelectorFromString(@"newSDKOperationWithLocalPersistenceResponseHandler:completeResponseHandler:"),nil,response);
     Check(operation!=nil,@"native playlist edit operation missing");
     [NSOperationQueue.mainQueue addOperation:operation];
 }

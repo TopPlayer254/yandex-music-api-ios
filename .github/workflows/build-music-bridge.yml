@@ -111,6 +111,7 @@ jobs:
           app="$RUNNER_TEMP/sim-derived/Build/Products/Debug-iphonesimulator/BridgeSmoke.app"
           codesign --force --deep --sign - "$app"
           xcrun simctl install "$BRIDGE_SIMULATOR" "$app"
+          xcrun simctl privacy "$BRIDGE_SIMULATOR" grant media-library dev.hikeri.kreshka.music.smoke
           launch="$(xcrun simctl launch --terminate-running-process "$BRIDGE_SIMULATOR" dev.hikeri.kreshka.music.smoke)"
           echo "$launch"
           pid="${launch##*: }"
