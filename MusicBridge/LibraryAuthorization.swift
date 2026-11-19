@@ -56,7 +56,7 @@ private final class LibraryAuthorizationSession: ObservableObject {
             let allowed = status == .authorized
             NotificationCenter.default.post(name: .init("KreshkaLibraryAuthorizationChanged"), object: allowed ? "authorized" : "denied")
             guard allowed else { denied = true; return }
-            _ = MusicLibrary.shared
+            _ = MusicKit.MusicLibrary.shared
             LibraryAuthorization.authorized()
             finished = true
             completion()
