@@ -119,6 +119,16 @@ final class KreshkaBackend: NSObject, ObservableObject {
         guard signedIn else { throw MusicServiceError.unauthorized }
         let service = container.service
         switch action {
+        case "playlist.create":
+            let name = ((payload["name"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { throw MusicServiceError.message("Введите название плейлиста.") }
+            let playlist = try await service.createPlaylist(name: name)
+            for id in payload["tracks"] as? [String] ?? [] {
+                try await service.add(trackID: id, toPlaylistID: playlist.id)
+            }
+            await container.catalog.refreshLibrary()
+            NotificationCenter.default.post(name: .init("KreshkaCatalogChanged"), object: self)
+            return ["playlist": encode(playlist) ?? [:]]
         case "catalog":
             let query = (payload["query"] as? String) ?? ""
             let identifier = (payload["id"] as? String) ?? ""

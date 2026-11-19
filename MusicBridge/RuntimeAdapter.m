@@ -220,6 +220,22 @@ static NSString *KIdentifier(id object,NSUInteger depth) {
 }
 
 static id KModel(NSString *kind,NSDictionary *value);
+static id KNativeModelKind(Class modelClass) {
+    Class songs=NSClassFromString(@"MPModelSong");
+    SEL songSelector=NSSelectorFromString(@"kindWithVariants:");
+    id songKind=[songs respondsToSelector:songSelector] ? ((id(*)(id,SEL,NSUInteger))objc_msgSend)(songs,songSelector,1) : nil;
+    NSString *name=NSStringFromClass(modelClass);
+    if ([name isEqualToString:@"MPModelSong"]) return songKind;
+    id albumKind=KCall1(NSClassFromString(@"MPModelAlbum"),@"kindWithSongKind:",songKind);
+    if ([name isEqualToString:@"MPModelAlbum"]) return albumKind;
+    if ([name isEqualToString:@"MPModelArtist"]) return KCall1(NSClassFromString(@"MPModelArtist"),@"kindWithAlbumKind:",albumKind);
+    if ([name isEqualToString:@"MPModelPlaylist"]) {
+        id entryKind=KCall1(NSClassFromString(@"MPModelPlaylistEntry"),@"kindWithKinds:",songKind ? @[songKind] : @[]);
+        SEL selector=NSSelectorFromString(@"kindWithPlaylistEntryKind:options:");
+        if ([modelClass respondsToSelector:selector]) return ((id(*)(id,SEL,id,NSUInteger))objc_msgSend)(modelClass,selector,entryKind,0);
+    }
+    return KCall1(NSClassFromString(@"MPModelKind"),@"kindWithModelClass:",modelClass);
+}
 static id KIdentifiers(NSString *identifier,Class modelClass) {
     Class cls=NSClassFromString(@"MPIdentifierSet");
     id allocated=[cls alloc];
@@ -241,7 +257,7 @@ static id KIdentifiers(NSString *identifier,Class modelClass) {
     id result=nil;
     SEL modern=NSSelectorFromString(@"initWithSource:modelKind:block:");
     if ([allocated respondsToSelector:modern]) {
-        id modelKind=KCall1(NSClassFromString(@"MPModelKind"),@"kindWithModelClass:",modelClass);
+        id modelKind=KNativeModelKind(modelClass);
         result=((id(*)(id,SEL,id,id,id))objc_msgSend)(allocated,modern,@"Kreshka",modelKind,populate);
     } else if ([allocated respondsToSelector:NSSelectorFromString(@"initWithBlock:")]) {
         result=KCall1(allocated,@"initWithBlock:",populate);
@@ -445,7 +461,31 @@ static void KRunCommands(NSArray *commands,NSUInteger index,NSMutableArray *stat
     });
 }
 
+static void KCreatePlaylist(id operation) {
+    id request=KGet(operation,@"request");
+    void(^local)(NSError *)=[KGet(operation,@"localPersistenceResponseHandler") copy];
+    void(^complete)(NSError *,id)=[KGet(operation,@"completeResponseHandler") copy];
+    void(^finish)(NSDictionary *,NSError *)=^(NSDictionary *value,NSError *error){
+        id playlist=error ? nil : KModel(@"playlist",value[@"playlist"]);
+        if (!error && !playlist) error=KError(@"Не удалось создать нативную модель плейлиста.");
+        if (local) local(error);
+        if (complete) complete(error,playlist);
+        KSend1(operation,@"finishWithError:",error);
+    };
+    if (![KGet(request,@"shouldCreatePlaylist") boolValue] || [KGet(request,@"createFolder") boolValue]) {
+        finish(nil,KError(@"Этот вид изменения плейлиста пока не подключён к Яндексу.")); return;
+    }
+    NSMutableArray *tracks=[NSMutableArray new];
+    for (id entry in KCall0(KGet(request,@"playlistEntries"),@"allItems")) {
+        NSString *identifier=KIdentifier(entry,0); if (identifier) [tracks addObject:identifier];
+    }
+    KExecute(@"playlist.create",@{@"name":KGet(request,@"playlistName") ?: @"",@"tracks":tracks},finish);
+}
+
 static void KInstallModels(void) {
+    for (NSString *name in @[@"MPModelLibraryPlaylistEditChangeRequestOperation",@"MPModelLibrarySDKPlaylistEditChangeRequestOperation"]) {
+        KReplace(NSClassFromString(name),@"execute",^(id operation){ KCreatePlaylist(operation); },2,"v");
+    }
     Class accountClass=NSClassFromString(@"MusicApplication.AccountButton") ?: NSClassFromString(@"_TtC16MusicApplication13AccountButton");
     Method accountMove=class_getInstanceMethod(accountClass,@selector(didMoveToWindow));
     if (accountMove) {
@@ -587,8 +627,8 @@ static NSDictionary *KAppleItem(NSString *type,NSDictionary *value) {
 // redirected. OAuth, document pickers and our own sheets remain ordinary UI.
 static NSInteger KPresentationRoute(UIViewController *controller) {
     NSString *name=NSStringFromClass(controller.class);
-    if ([name containsString:@"MusicApplication"] || [name hasPrefix:@"_TtC16MusicApplication"]) {
-        if ([name containsString:@"JSWhatsNewViewController"] || [name containsString:@"WelcomeViewController"]) return 1;
+    if ([name containsString:@"MusicApplication"] || [name containsString:@"MusicCore"] || [name containsString:@"MusicJSCore"] || [name containsString:@"Music."]) {
+        if ([name containsString:@"WhatsNew"] || [name containsString:@"WelcomeView"]) return 1;
         if ([name containsString:@"JSSettingsViewController"]) return 2;
     }
     for (UIViewController *child in controller.childViewControllers) {
@@ -672,6 +712,7 @@ static BOOL KAppleMusicURL(NSURL *url) {
     Method present=class_getInstanceMethod(UIViewController.class,@selector(presentViewController:animated:completion:));
     IMP originalPresent=method_getImplementation(present);
     KReplace(UIViewController.class,@"presentViewController:animated:completion:",^(UIViewController *presenter,UIViewController *controller,BOOL animated,void(^completion)(void)){
+        KLog([NSString stringWithFormat:@"presentation %@",NSStringFromClass(controller.class)]);
         NSInteger route=KPresentationRoute(controller);
         if (route) {
             KLog(route==1 ? @"suppressed Apple onboarding presentation" : @"redirected Apple settings to Maple settings");

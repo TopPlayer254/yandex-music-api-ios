@@ -94,9 +94,10 @@ static void Finish(UIViewController *root) {
 }
 static void VerifyOnboarding(UIViewController *root) {
     VerifyToolbar();
-    Class cls=FixtureClass(UIViewController.class,"_TtC16MusicApplication24JSWhatsNewViewController");
     __block NSUInteger completed=0;
-    for (NSUInteger i=0;i<3;i++) {
+    NSArray *names=@[@"_TtC16MusicApplication24JSWhatsNewViewController",@"MusicCoreUI.WhatsNewViewController",@"MusicCore.WelcomeViewController"];
+    for (NSString *name in names) {
+        Class cls=FixtureClass(UIViewController.class,name.UTF8String);
         [root presentViewController:[cls new] animated:NO completion:^{
             Check(root.presentedViewController==nil,@"Apple onboarding presented");
             if (++completed==3) {
@@ -105,6 +106,21 @@ static void VerifyOnboarding(UIViewController *root) {
             }
         }];
     }
+}
+static void VerifyPlaylistCreation(void(^completion)(void)) {
+    id request=[NSClassFromString(@"MPModelLibraryPlaylistEditChangeRequest") new];
+    Check(request!=nil,@"native playlist edit request missing");
+    [request setValue:@YES forKey:@"shouldCreatePlaylist"];
+    [request setValue:@"Native bridge regression" forKey:@"playlistName"];
+    void(^response)(NSError *,id)=^(NSError *error,id playlist){
+        Check(error==nil && [Call(playlist,@"name") isEqual:@"Native bridge regression"],@"native playlist creation failed");
+        NSLog(@"KRESHKA_NATIVE_PLAYLIST_CREATION_PASSED");
+        completion();
+    };
+    id operation=((id(*)(id,SEL,id,id))objc_msgSend)(request,
+        NSSelectorFromString(@"newOperationWithLocalPersistenceResponseHandler:completeResponseHandler:"),nil,response);
+    Check(operation!=nil,@"native playlist edit operation missing");
+    [NSOperationQueue.mainQueue addOperation:operation];
 }
 static void VerifyPlayback(id identifiers,UIViewController *root) {
     Check(NSClassFromString(@"MPCPlayerChangeRequest")!=Nil,@"native MPC framework unavailable");
@@ -154,7 +170,12 @@ static void VerifyCatalogue(UIViewController *root) {
         id provider=Call(Call(NSClassFromString(@"MPMediaLibrary"),@"defaultMediaLibrary"),@"libraryDataProvider");
         [provider setValue:@{@"tracks":@[@{}],@"albums":@[@{}],@"artists":@[@{}],@"playlists":@[@{}]} forKey:@"catalog"];
         VerifyContentGroupFiltering(YES);
-        VerifyPlayback(identifiers,root);
+        Class checks=NSClassFromString(@"KreshkaMusicKitChecks");
+        Check(checks!=Nil,@"MusicKit conversion test missing");
+        ((void(*)(id,SEL,id))objc_msgSend)(checks,NSSelectorFromString(@"run:"),^(NSError *error){
+            Check(error==nil,@"public MusicKit library failed");
+            VerifyPlaylistCreation(^{ VerifyPlayback(identifiers,root); });
+        });
     };
     ((void(*)(id,SEL,void *))objc_msgSend)(request,NSSelectorFromString(@"performWithResponseHandler:"),(__bridge void *)callback);
 }

@@ -19,6 +19,19 @@ The pinned original device application requires iOS 26.5 or later.
    `ML3ExceptionDatabaseDoesNotExist` while initializing `MPMediaLibrary`. The
    cloned app has no Apple Music ML3 database in its sandbox. The bridge now
    initializes MPMediaLibrary with its own metadata provider and namespace.
+5. Fix 4 reached a separate native startup query,
+   `filterAvailableContentGroups:withOptions:`. Its original implementation
+   creates MPMediaLibraryView and enters `_MediaLibrary_coreLibrary`, which
+   cannot use our database-free provider. The reported crash is a NULL string
+   passed to `std::string`, not a new entitlement failure. Content-group queries
+   for the bridge provider now return an unsigned bitmask derived from the
+   catalogue. Other providers retain the original implementation.
+
+The regression host calls that exact native selector before catalogue loading
+with no databasePath, then checks populated filtering on a background queue.
+It verifies requested group masks rather than returning every group or zero for
+all requests. `_MediaLibrary_coreLibrary` is not hooked as an Objective-C object:
+its ABI returns a C++ shared_ptr.
 
 The simulator host exercises an asynchronous library request with a stack block
 and a captured lifetime sentinel. Its ready flag is written only after that
