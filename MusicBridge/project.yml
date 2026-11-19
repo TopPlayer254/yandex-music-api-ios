@@ -45,6 +45,9 @@ targets:
     dependencies:
       - target: KreshkaBridge
         embed: true
+      - target: MusicPresenceFixture
+        link: false
+        embed: false
     info:
       path: ../work/bridge-generated/Smoke-Info.plist
       properties:
@@ -59,3 +62,18 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.hikeri.kreshka.music.smoke
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
     scheme: {}
+  MusicPresenceFixture:
+    type: application
+    platform: iOS
+    sources:
+      - path: SmokeSupport
+    info:
+      path: ../work/bridge-generated/Presence-Info.plist
+      properties:
+        CFBundleDisplayName: MusicKit dependency fixture
+        CFBundleIdentifier: com.apple.Music
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.apple.Music

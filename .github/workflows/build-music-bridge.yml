@@ -109,6 +109,9 @@ jobs:
         run: |
           set -euo pipefail
           app="$RUNNER_TEMP/sim-derived/Build/Products/Debug-iphonesimulator/BridgeSmoke.app"
+          helper="$RUNNER_TEMP/sim-derived/Build/Products/Debug-iphonesimulator/MusicPresenceFixture.app"
+          codesign --force --sign - "$helper"
+          xcrun simctl install "$BRIDGE_SIMULATOR" "$helper"
           codesign --force --deep --sign - "$app"
           xcrun simctl install "$BRIDGE_SIMULATOR" "$app"
           xcrun simctl privacy "$BRIDGE_SIMULATOR" grant media-library dev.hikeri.kreshka.music.smoke

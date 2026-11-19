@@ -54,6 +54,9 @@ jobs:
         run: |
           set -euxo pipefail
           app="$RUNNER_TEMP/sim-derived/Build/Products/Release-iphonesimulator/BridgeSmoke.app"
+          helper="$RUNNER_TEMP/sim-derived/Build/Products/Release-iphonesimulator/MusicPresenceFixture.app"
+          codesign --force --sign - "$helper"
+          xcrun simctl install "$BRIDGE_SIMULATOR" "$helper"
           codesign --force --deep --sign - "$app"
           xcrun simctl install "$BRIDGE_SIMULATOR" "$app"
           xcrun simctl privacy "$BRIDGE_SIMULATOR" grant media-library dev.hikeri.kreshka.music.smoke
@@ -70,7 +73,7 @@ jobs:
           cp "$container/Documents/bridge-smoke.ready" dist/bridge-smoke.ready
           cp -R "$container/Documents/Kreshka" dist/ 2>/dev/null || true
           xcrun simctl io "$BRIDGE_SIMULATOR" screenshot dist/kreshka-account-simulator.png
-          echo '{"bridge_smoke":"passed","screen":"Maple settings","catalogue":"local fixture through native MPModel","playback":"native MPC commands to AVPlayer","device_music_app_verified":false}' > dist/simulator-status.json
+          echo '{"bridge_smoke":"passed","screen":"Maple settings","catalogue":"local fixture through native MPModel","playback":"native MPC commands to AVPlayer","music_app_presence_fixture":true,"device_music_app_verified":false}' > dist/simulator-status.json
       - name: Collect logs
         timeout-minutes: 2
         if: always()
