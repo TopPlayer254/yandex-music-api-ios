@@ -18,6 +18,25 @@ BUNDLE_ID='dev.hikeri.kreshka.music'
 ORIGINAL_SHA256='1111db60f9e19436b30f732dde0f9d0cbaf0b1127bee1d3ca3bee33ba3dedd2a'
 BRIDGE_LOAD='@executable_path/Frameworks/KreshkaBridge.framework/KreshkaBridge'
 CORE_ANALYTICS='/System/Library/PrivateFrameworks/CoreAnalytics.framework/CoreAnalytics'
+# Pinned iOS 26.5.1 / 23F81 Music launch task. The device crash at Music+0x1c070
+# is the return address of MusicDownloadedSongCatalogStore.shared. The entire
+# isolated metadata/shared/activate/release sequence has no result used by the
+# continuation at +0x1c080. Our offline store owns Yandex downloads instead.
+DOWNLOAD_CATALOG_STARTUP_OFFSET=0x1C060
+DOWNLOAD_CATALOG_STARTUP_ORIGINAL=bytes.fromhex(
+    '000080d2cca93d94f40300aac2a93d94f40300aac4a93d94e00314aa26de3d94')
+DOWNLOAD_CATALOG_STARTUP_PATCH=struct.pack('<I',0x14000008)+struct.pack('<I',0xD503201F)*7
+
+
+def disable_apple_download_catalog_startup(data:bytes) -> bytes:
+    """Skip one version-checked Apple download-store activation, retaining ABI."""
+    start=DOWNLOAD_CATALOG_STARTUP_OFFSET
+    end=start+len(DOWNLOAD_CATALOG_STARTUP_ORIGINAL)
+    current=data[start:end]
+    if current==DOWNLOAD_CATALOG_STARTUP_PATCH: return data
+    if current!=DOWNLOAD_CATALOG_STARTUP_ORIGINAL:
+        raise ValueError('Unexpected Apple download-catalog startup instructions')
+    return data[:start]+DOWNLOAD_CATALOG_STARTUP_PATCH+data[end:]
 
 
 def validate_architecture(executable:bytes, framework:bytes):
@@ -105,7 +124,9 @@ def package(original:Path, framework:Path, output:Path, simulator=False):
     validate_architecture((original/source_executable).read_bytes(),(framework/'KreshkaBridge').read_bytes())
     with tempfile.TemporaryDirectory(prefix='kreshka-package-') as temporary:
         app=Path(temporary)/'Payload/Music.app'
-        shutil.copytree(original,app)
+        # ipsw disassembly may leave an address-to-symbol cache beside Music.
+        # It is a research sidecar, not part of the original app's resources.
+        shutil.copytree(original,app,ignore=shutil.ignore_patterns('*.a2s'))
         for path in [app/'PlugIns',app/'Extensions',app/'Metadata.appintents']:
             if path.is_dir(): shutil.rmtree(path)
         for path in list(app.rglob('XPCServices')):
@@ -144,7 +165,10 @@ def package(original:Path, framework:Path, output:Path, simulator=False):
             if not path.is_file(): continue
             if path.name=='embedded.mobileprovision': path.unlink(); continue
             if is_macho(path):
-                path.write_bytes(patch_macho(path.read_bytes(),BRIDGE_LOAD if path==app/source_executable else None))
+                image=path.read_bytes()
+                if path==app/source_executable and not simulator:
+                    image=disable_apple_download_catalog_startup(image)
+                path.write_bytes(patch_macho(image,BRIDGE_LOAD if path==app/source_executable else None))
                 path.chmod(0o755)
                 stripped.append(path.relative_to(app).as_posix())
         for path in sorted(app.rglob('_CodeSignature'),key=lambda p:len(p.parts),reverse=True):
@@ -167,6 +191,7 @@ def package(original:Path, framework:Path, output:Path, simulator=False):
         report={'bundle_id':BUNDLE_ID,'original_sha256':source_hash,'original_ui_retained':True,
                 'bridge':'KreshkaBridge 0.1.0-experimental','apple_backend_fully_replaced':False,
                 'direct_coreanalytics_imports_disabled':['AnalyticsSendEvent','AnalyticsSendEventLazy'],
+                'apple_download_catalog_launch_disabled':not simulator,
                 'runtime_device_verified':False,'simulator_package':simulator,
                 'unsigned_macho_files':stripped,'ipa_sha256':hashlib.sha256(output.read_bytes()).hexdigest(),
                 'limitations':['Private method adapters are conditional on runtime ABI.',

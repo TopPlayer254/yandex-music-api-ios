@@ -3,7 +3,9 @@ import struct
 import unittest
 
 from macho_audit import dylib_loads
-from package_music_bridge import patch_macho, validate_architecture, BRIDGE_LOAD, CORE_ANALYTICS
+from package_music_bridge import (patch_macho, validate_architecture, BRIDGE_LOAD, CORE_ANALYTICS,
+    disable_apple_download_catalog_startup, DOWNLOAD_CATALOG_STARTUP_OFFSET,
+    DOWNLOAD_CATALOG_STARTUP_ORIGINAL, DOWNLOAD_CATALOG_STARTUP_PATCH)
 
 
 def fixture(padding=True,analytics=False):
@@ -76,6 +78,26 @@ class PackageMusicBridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'arm64e'):
             validate_architecture(main,bytes(generic))
         validate_architecture(main,main)
+
+    def test_download_catalog_startup_skips_balanced_sequence_and_keeps_continuation(self):
+        start=DOWNLOAD_CATALOG_STARTUP_OFFSET
+        end=start+len(DOWNLOAD_CATALOG_STARTUP_ORIGINAL)
+        original=b'\x55'*start+DOWNLOAD_CATALOG_STARTUP_ORIGINAL+b'\xaa'*32
+        patched=disable_apple_download_catalog_startup(original)
+        self.assertEqual(len(patched),len(original))
+        self.assertEqual(patched[:start],original[:start])
+        self.assertEqual(patched[end:],original[end:])
+        branch=struct.unpack_from('<I',patched,start)[0]
+        self.assertEqual(branch & 0xFC000000,0x14000000)
+        self.assertEqual(start+((branch & 0x03FFFFFF)*4),end)
+        self.assertEqual(disable_apple_download_catalog_startup(patched),patched)
+        self.assertEqual(patched[start:end],DOWNLOAD_CATALOG_STARTUP_PATCH)
+
+    def test_download_catalog_patch_rejects_other_versions_and_truncated_images(self):
+        with self.assertRaisesRegex(ValueError,'startup instructions'):
+            disable_apple_download_catalog_startup(b'\0'*(DOWNLOAD_CATALOG_STARTUP_OFFSET+32))
+        with self.assertRaisesRegex(ValueError,'startup instructions'):
+            disable_apple_download_catalog_startup(b'\0'*32)
 
 
 if __name__=='__main__': unittest.main()

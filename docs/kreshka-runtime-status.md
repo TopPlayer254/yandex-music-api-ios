@@ -26,6 +26,26 @@ The pinned original device application requires iOS 26.5 or later.
    passed to `std::string`, not a new entitlement failure. Content-group queries
    for the bridge provider now return an unsigned bitmask derived from the
    catalogue. Other providers retain the original implementation.
+6. Fix 6 on a clean device installation (`Music-2026-11-20-003430.ips`)
+   traps in MusicKitInternal about 0.18 seconds after launch. The return address
+   `Music+0x1c070` resolves to the call of
+   `MusicDownloadedSongCatalogStore.shared`; this is a separate failure from
+   the earlier public MusicKit model conversion. The adapter log contains no
+   backend-ready or catalogue requests before this crash. Fix 7 skips the pinned
+   original executable's isolated metadata/shared/activate/release sequence at
+   file offsets `0x1c060..<0x1c080`, branching to the existing continuation.
+   Yandex downloads use the existing Maple OfflineStore instead. The packager
+   checks the original executable SHA-256 and all 32 instruction bytes before
+   patching, keeps the executable size and surrounding instructions, and does
+   not patch arbitrary MusicKitInternal methods or Swift calling conventions.
+
+Fix 7 reuses the exact framework from Fix 6 (source `8605e36`); it changes only
+the launch sequence in the original Music executable. Regression checks cover
+the branch destination, unchanged surrounding bytes, idempotence and rejection
+of mismatched/truncated images. The original arm64e launch cannot be verified on
+the Intel Simulator, so a device launch confirmation is still required. The log
+supplied with this crash covers the early launch failure, not the reported empty
+home/library behavior after successful startup.
 
 The regression host calls that exact native selector before catalogue loading
 with no databasePath, then checks populated filtering on a background queue.
